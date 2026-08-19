@@ -1,0 +1,13 @@
+{
+  "name": "trip-ledger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REST API for tracking personal trips and their expenses",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/presentation/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint src && tsc --noEmit"
+  }
+}
