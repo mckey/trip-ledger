@@ -16,6 +16,10 @@ class InMemoryTripRepository implements TripRepository {
   async findById(id: string): Promise<Trip | null> {
     return this.trips.get(id) ?? null;
   }
+
+  async list(): Promise<Trip[]> {
+    return [...this.trips.values()];
+  }
 }
 
 function makeTrip(status: Trip['status'] = 'active'): Trip {
