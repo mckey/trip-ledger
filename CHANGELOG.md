@@ -6,6 +6,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-19
+
+### Added
+
+- Expenses CRUD vertical slice with domain rules for expense management in trips
+- Trips CRUD vertical slice with migrations, use cases, PostgreSQL/InMemory repositories, HTTP API, and comprehensive tests
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
