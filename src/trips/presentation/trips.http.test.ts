@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../presentation/app';
 import { InMemoryTripRepository } from '../infrastructure/InMemoryTripRepository';
+import { InMemoryExpenseRepository } from '../../expenses/infrastructure/InMemoryExpenseRepository';
 
 function makeApp() {
-  return createApp({ trips: new InMemoryTripRepository() });
+  return createApp({ trips: new InMemoryTripRepository(), expenses: new InMemoryExpenseRepository() });
 }
 
 const validBody = {

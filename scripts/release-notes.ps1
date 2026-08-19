@@ -173,7 +173,7 @@ $RawResponse = $Prompt | & claude -p `
     --model claude-haiku-4-5 `
     --output-format json `
     --json-schema $SchemaArg `
-    --max-turns 6
+    --max-turns 10
 $ClaudeExit = $LASTEXITCODE
 $ResponseText = (@($RawResponse) -join "`n").Trim()
 

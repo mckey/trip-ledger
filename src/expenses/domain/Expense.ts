@@ -20,5 +20,6 @@ export interface ExpenseRepository {
 
 /** Порт до BC trips: реалізується в infrastructure, domain про trips не знає. */
 export interface TripStatusPort {
+  exists(tripId: string): Promise<boolean>;
   canAcceptExpenses(tripId: string): Promise<boolean>;
 }
