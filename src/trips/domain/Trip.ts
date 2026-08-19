@@ -19,6 +19,13 @@ export class Trip {
   canAcceptExpenses(): boolean {
     return this.status !== 'finished';
   }
+
+  finish(): void {
+    if (this.status === 'finished') {
+      throw new Error(`Trip ${this.id} is already finished`);
+    }
+    this.status = 'finished';
+  }
 }
 
 export interface TripRepository {
