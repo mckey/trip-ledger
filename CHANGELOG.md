@@ -6,6 +6,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-19
+
+### Added
+
+- FinishTrip use case with finished-trip domain rule
+
+### Changed
+
+- Money value object unit tests
+- vitest and TypeScript toolchain setup with /hello and /scaffold-usecase commands
+- Changelog and release-notes pipeline setup
+
 ## [0.1.0] - 2026-08-19
 
 ### Added

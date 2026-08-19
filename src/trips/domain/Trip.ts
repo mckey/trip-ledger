@@ -31,4 +31,5 @@ export class Trip {
 export interface TripRepository {
   save(trip: Trip): Promise<void>;
   findById(id: string): Promise<Trip | null>;
+  list(): Promise<Trip[]>;
 }
