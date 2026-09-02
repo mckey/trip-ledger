@@ -85,65 +85,79 @@ C4Context
 
 ## 4. Solution strategy
 
-<!-- arch-forge: 3 стовпи (2 для XS), кожен — з ПОСИЛАННЯМ на інцидент, AC або обмеження з §2/Invariants, і з назвою ADR,
-     який з нього виріс (або «inline — 1 з 4 критеріїв»). Item-bank: де живе нове поле · як BC дістає чуже · форма відповіді
-     · тип грошей · вид міграції. Рішення, що суперечить Invariants, — red flag: або переформулювати, або Override у §1 ¶4. -->
-
 **Стратегічні стовпи (насіння для ADR):**
 
-1. **<Стовп 1>** — <2–3 речення; Invariant/AC/інцидент; → ADR-NNNN або inline>.
-2. **<Стовп 2>** — <…>.
-3. **<Стовп 3>** — <…>.
+1. **Курс — атрибут витрати, зафіксований один раз; не журнал і не довідник.** Словник: «rate snapshot — курс до base currency, зафіксований на витраті один раз для перерахунку. NOT живий курс». PRD §3 виключає історію курсів, AC-05 каже: заміна просто перезаписує значення. Тож курс лягає однією nullable-колонкою на `expenses` (міграція 0004) і полем `rate?` на `Expense`; правка — новий use case `SetExpenseRate`, дозволений у finished поїздці (AC-08 — це не додавання витрати, інваріант «finished блокує нові витрати» не зачеплений). Зачіпає базу + чесні альтернативи (окрема таблиця курсів, довідник за датою) → **ADR-0001**.
+2. **Курс зберігаємо й рахуємо цілим числом зі шкалою 10⁹, округлення half-up — одне правило на всю систему.** NFR «похибка ≤ 1 minor unit на витрату» + конвенція trip-budget §8 «плаваюча точка заборонена». Вхід приймає ≤ 6 знаків після коми (закриває PRD §8 OQ #1: 6), але зберігання ×10⁹, бо для курсів на кшталт VND→EUR (≈ 0.000037) шкала 10⁶ дає відносну похибку ~3%, яка на великих сумах пробиває 1 minor unit. Half-up (PRD §8 OQ #3, дефолт) фіксується тут, а не на стадії data model — бо це рішення про `shared/`, а не про колонку. → **ADR-0002**.
+3. **Counted expense переозначується: «має ефективний курс», а не «у base currency»; converted total і remaining живляться з однієї функції.** PRD Goal 3 і AC-09 вимагають, щоб витрата з курсом входила у порівняння з budget. Тому `BudgetBlock` із trip-budget (її ADR-0002) рахує Σ counted у перерахованих сумах; витрата у base currency має похідний курс 1 (AC-06) — без збереження і без backfill, який передбачав PRD §9. Лічильник «без курсу» для converted total і лічильник uncounted для remaining — одне й те саме число. → **ADR-0003**; уточнює визначення counted/uncounted у `docs/features/trip-budget/CONTEXT.md` (→ `fix-term`, §11).
+
+Четвертий стовп виріс не зі стратегії, а з §5: щоб AC-06 і AC-07 мали сенс, base currency має існувати незалежно від budget і бути заблокованою, поки є витрати з курсом — це рішення про напрямок портів між BC (**ADR-0004**).
 
 Кожне тактичне рішення §5–§8 має простежуватись до одного зі стовпів; рішення, що суперечить стовпу, — рядок у §11.
 
 ## 5. Building block view
 
-<!-- arch-forge: контейнери мого стека відомі наперед — HTTP presentation (Express + zod), по контейнеру на BC, shared,
-     PostgreSQL. Малюй їх одразу і опиши лише ЗМІНИ: новий BC? новий порт? зворотний порт (→ ADR)? нова таблиця?
-     Обов'язкові підблоки: «Дельта файлів» (+ новий / ~ змінюється) і «Дельта міграцій». -->
+Стиль без змін — Clean Architecture з портами між BC. Фіча розширює `expenses` (атрибут, use case, агрегат), `shared` (value object курсу) і — несподівано для PRD — `trips`: у trip-budget base currency з'являлась лише разом із budget (її ADR-0001), а тут AC-06 («курс 1 для base currency сам») і AC-07 («не змінювати base currency, поки є курси») потрібні й поїздці без бюджету. Тому base currency стає **самостійним атрибутом поїздки** (задається при створенні або окремим use case; задання budget лишається сумісним — фіксує її, якщо ще не задана), а перевірка «є витрати з курсом?» іде через **зворотний порт** `RatedExpensesPort` у `trips/domain` з адаптером у `trips/infrastructure` поверх `ExpenseRepository` — дзеркало `TripRepositoryStatusPort`, але у другий бік. Це перший двонапрямний зв'язок між BC у репо — саме тому ADR-0004, а не рядок у §8.
 
-<1 абзац: стиль (Clean Architecture як у репо), що саме розширюємо, які порти між BC; breaking changes контрактів — назвати і відправити у §11>
+Контракти: підсумок отримує блок `converted: { total, withoutRate } | null` (null — поки у поїздки немає base currency); відповідь додавання витрати — поле `rate` у `expense` (обов'язковий контракт — стадія API). Breaking change тут менший, ніж у trip-budget (форма вже об'єкт/envelope за її §5), але блок `budget` змінює семантику counted → §11.
 
 **Дельта файлів (`+` новий, `~` змінюється):**
 
 ```
 src/
-├── shared/                 <…>
-├── <bc-1>/
-│   ├── domain/             <~/+ …>
-│   ├── application/        <~/+ …>
-│   ├── infrastructure/     <~/+ …>
-│   └── presentation/       <~/+ …>
-├── <bc-2>/                 <…>
-└── presentation/app.ts     <~ зшивання портів / middleware>
+├── shared/
+│   ├── Money.ts                                     (без змін)
+│   ├── Balance.ts                                   (з trip-budget ADR-0004, без змін)
+│   └── Rate.ts                                    + ADR-0002: BigInt ×10⁹, Rate.parse('0.9123'), apply(Money) → Money (half-up), ONE = 10⁹
+├── expenses/
+│   ├── domain/Expense.ts                          ~ + rate?: Rate, withRate(); ExpenseRepository + findById(id); TripBudgetPort розширено до { baseCurrency: string | null, budget: Money | null } — base currency існує й без budget (ADR-0004)
+│   ├── domain/errors.ts                           ~ + ExpenseNotFoundError
+│   ├── application/AddExpense.ts                  ~ необов'язковий rate у вході (AC-01/AC-02)
+│   ├── application/SetExpenseRate.ts              + замінити курс на збереженій витраті; без TripStatusPort — дозволено у finished (AC-05/AC-08)
+│   ├── application/BudgetBlock.ts                 ~ counted = має ефективний курс; Σ у перерахованих сумах; + convertedTotal, withoutRate (ADR-0003)
+│   ├── application/GetTripSummary.ts              ~ + converted: { total: Money(base), withoutRate } | null
+│   ├── infrastructure/PostgresExpenseRepository.ts ~ мапінг rate_nano (string → BigInt); findById
+│   ├── infrastructure/InMemoryExpenseRepository.ts ~ findById
+│   └── presentation/expensesRouter.ts             ~ rate у схемі додавання (додатне, ≤ 6 знаків); маршрут заміни курсу
+├── trips/
+│   ├── domain/Trip.ts                             ~ + setBaseCurrency(currency, hasRatedExpenses) → BaseCurrencyLockedError; RatedExpensesPort (ADR-0004)
+│   ├── application/CreateTrip.ts                  ~ необов'язкова baseCurrency при створенні
+│   ├── application/SetTripBaseCurrency.ts         + задати/змінити base currency з перевіркою порту (AC-07)
+│   ├── infrastructure/ExpenseRepositoryRatedPort.ts + адаптер зворотного порту поверх ExpenseRepository
+│   └── presentation/tripsRouter.ts                ~ baseCurrency у створенні; маршрут зміни base currency
+├── presentation/app.ts                            ~ зшивання RatedExpensesPort (trips ← expenses) поряд із TripStatusPort/TripBudgetPort
+migrations/
+└── 0004_add_expense_rate.sql                      + ALTER TABLE expenses ADD rate_nano BIGINT NULL CHECK (rate_nano > 0); послабити CHECK trips з 0003 (base currency без budget); expand-only, backfill немає
 ```
 
-**Дельта міграцій:** `migrations/NNNN_<назва>.sql` — <DDL одним рядком; expand-only / expand + backfill / contract; backfill є/немає> · або «немає — обчислення поверх наявних даних».
+**Дельта міграцій:** `migrations/0004_add_expense_rate.sql` — `ALTER TABLE expenses ADD COLUMN rate_nano BIGINT NULL CHECK (rate_nano > 0)`; expand-only; backfill **немає** — PRD §9 передбачав backfill курсу 1 для витрат у base currency, але правило «валюта витрати = base currency ⇒ курс 1» похідне й обчислюється на читанні (ADR-0003), тож старі рядки лишаються `NULL` і вже counted. Той самий файл послаблює CHECK з 0003: `(budget_minor IS NULL) = (base_currency IS NULL)` → `(budget_minor IS NULL OR base_currency IS NOT NULL)` — base currency без budget стає валідною, budget без base currency — ні (ADR-0004). Передумова: міграція 0003 (trip-budget) вже застосована.
 
 **C4 Container (L2):**
 
 ```mermaid
 C4Container
-    title <репо> — Containers (дельта фічі <slug>)
+    title trip-ledger — Containers (дельта фічі multi-currency-summary)
 
-    Person(<id>, "<роль>", "<що робить>")
+    Person(owner, "owner", "вводить витрати й курси, читає підсумок")
 
-    Container_Boundary(api, "<репо> — один Node-процес (Express <версія>)") {
-        Container(http, "HTTP presentation", "Express + zod", "<роутери, що змінюються>")
-        Container(<bc1>, "BC <bc1>", "TypeScript", "<сутності, use case-и, репозиторії, що змінюються>")
-        Container(<bc2>, "BC <bc2>", "TypeScript", "<…>")
-        Container(shared, "shared", "TypeScript", "<value objects>")
+    Container_Boundary(api, "trip-ledger — один Node-процес (Express 5.2.1)") {
+        Container(http, "HTTP presentation", "Express 5 + zod 4", "expensesRouter (rate у додаванні, маршрут заміни курсу), tripsRouter (base currency)")
+        Container(trips, "BC trips", "TypeScript", "Trip.setBaseCurrency, SetTripBaseCurrency, адаптер RatedExpensesPort")
+        Container(expenses, "BC expenses", "TypeScript", "Expense.rate, AddExpense, SetExpenseRate, BudgetBlock (converted total + counted за курсом), GetTripSummary")
+        Container(shared, "shared", "TypeScript", "Money, Balance, Rate (×10⁹, half-up)")
     }
 
-    ContainerDb(pg, "PostgreSQL", "<таблиці>", "<міграція NNNN>")
+    ContainerDb(pg, "PostgreSQL", "expenses, trips", "міграція 0004: expenses.rate_nano BIGINT NULL + послаблений CHECK trips (після 0003: trips.base_currency)")
 
-    Rel(<id>, http, "REST-запити", "HTTP/JSON")
-    Rel(http, <bc1>, "виклики use case-ів", "in-process")
-    Rel(http, <bc2>, "виклики use case-ів", "in-process")
-    Rel(<bc2>, <bc1>, "<порти>", "in-process, лише через порт")
-    Rel(<bc1>, pg, "SQL", "pg")
-    Rel(<bc2>, pg, "SQL", "pg")
+    Rel(owner, http, "REST-запити", "HTTP/JSON, локально")
+    Rel(http, trips, "виклики use case-ів", "in-process")
+    Rel(http, expenses, "виклики use case-ів", "in-process")
+    Rel(expenses, trips, "TripStatusPort, TripBudgetPort", "in-process, лише через порт")
+    Rel(trips, expenses, "RatedExpensesPort — новий напрямок (ADR-0004)", "in-process, лише через порт")
+    Rel(trips, shared, "Money")
+    Rel(expenses, shared, "Money, Balance, Rate")
+    Rel(trips, pg, "trips: читає/пише", "pg 8.23 SQL")
+    Rel(expenses, pg, "expenses: читає/пише", "pg 8.23 SQL")
 ```
 
 ## 6. Runtime view
