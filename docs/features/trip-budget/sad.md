@@ -65,34 +65,32 @@ ticket: "-"
 
 ## 3. Context and scope
 
-<!-- 🎯 Навіщо: малює КОРДОН СИСТЕМИ — хто з нею говорить ззовні, де закінчується зона довіри. -->
-<!--           Без §3 §5 і §8 (авторизація) розпливаються — неясно, що «всередині», а що «зовні». -->
-<!-- 📋 Що писати: 2-3 речення бізнес-контексту + таблиця зовнішніх систем + Mermaid C4Context. -->
-<!-- 📌 Приклад: «зовнішні — нема (свідома відмова від third-party у v1)» — це теж рішення.   -->
-<!-- Кордон довіри (trust boundary) — лінія, за якою ти не довіряєш даним без перевірки.       -->
+trip-ledger — локальний REST API для обліку власних поїздок і витрат; єдиний актор — `owner`. Фіча не додає зовнішніх інтеграцій: курси валют не тягнемо (інваріант словника «жодних зовнішніх залежностей за курсами»), каналів сповіщень (пуші, листи) немає і не буде у v1 (PRD §3). Кордон довіри — процес API: усе, що приходить по HTTP, валідується zod-ом на межі `presentation/`; за кордоном лише PostgreSQL.
 
-<Business context in 2-3 sentences. What the system does for whom.>
+**Зовнішні системи — немає.** Це свідоме рішення, записане замість мовчання: єдина «зовнішня» сутність — власна база даних.
+
+<!-- brownfield: Explore-скан виконано 2026-09-02 (див. §2 Technical) -->
 
 **External systems (in / out):**
 
 | Actor or system | Type | Interaction |
 |---|---|---|
-| <e.g. IC> | Person | Creates goals, adds checkpoints |
-| <e.g. notification-service> | System (internal) | Receives cron registration |
-| <e.g. Identity Provider> | System (external) | Provides JWT tokens |
+| `owner` | Person | Задає/замінює budget; додає витрати й отримує overspend signal; відкриває підсумок із remaining та uncounted |
+| PostgreSQL | System (own datastore) | Зберігає `trips` (+ `budget_minor`, `base_currency`) та `expenses` |
+| Зовнішні сервіси (курси валют, сповіщення) | — | Відсутні за рішенням (PRD §3, CONTEXT «Out of scope») |
 
 **C4 Context (L1):**
 
 ```mermaid
 C4Context
-    title <system> — System Context
+    title trip-ledger — System Context (фіча trip-budget)
 
-    Person(user, "<User>", "<role + intent>")
-    System(system, "<Our System>", "<one-sentence description>")
-    System_Ext(ext, "<External system>", "<one-sentence description>")
+    Person(owner, "owner", "єдиний користувач: задає budget, вводить витрати, читає підсумок")
+    System(ledger, "trip-ledger API", "Node/Express-моноліт: BC trips + BC expenses, JSON API, один процес")
+    SystemDb(pg, "PostgreSQL", "trips (+ budget_minor, base_currency), expenses")
 
-    Rel(user, system, "<interaction>", "<protocol>")
-    Rel(system, ext, "<interaction>", "<protocol>")
+    Rel(owner, ledger, "задає budget, додає витрати, відкриває підсумок", "HTTP/JSON, локально")
+    Rel(ledger, pg, "читає / пише", "pg 8.23, SQL без ORM")
 ```
 
 ## 4. Solution strategy
