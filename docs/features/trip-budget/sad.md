@@ -163,32 +163,111 @@ C4Container
 
 ## 6. Runtime view
 
-<!-- 🎯 Навіщо: ПОТІК У RUNTIME для 1-2 критичних сценаріїв. Хто з ким коли і у якому     -->
-<!--           порядку говорить. Без §6 §5 — лише купа коробок без життя.                  -->
-<!-- 📋 Що писати: Mermaid sequenceDiagram. Учасники — імена з §5 (не вигадуй нові!).      -->
-<!--           Повідомлення семантичні («складає чорновик»), БЕЗ HTTP-методів/шляхів —     -->
-<!--           ендпоінт-рівневі sequence-діаграми зʼявляться у stage 06 (define-api).      -->
-<!-- 📌 Приклад: «methodist → web-app: складає чорновик → web-app → content-api: зберегти». -->
+Учасники — контейнери з §5; повідомлення семантичні, без HTTP-методів і шляхів (ендпойнт-рівневі діаграми — стадія 6.6).
 
-**Critical flow 1: <flow name>**
+**Critical flow 1: owner задає (або замінює) budget поїздки** — US-01, US-05, US-06; AC-01, AC-02, AC-07, AC-09.
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant API
-    participant Service
-    participant DB
-    User->>API: <request>
-    API->>Service: <call>
-    Service->>DB: <write tx>
-    DB-->>Service: ok
-    Service-->>API: result
-    API-->>User: 201
+    actor O as owner
+    participant HTTP as HTTP presentation
+    participant T as BC trips
+    participant DB as PostgreSQL
+
+    O->>HTTP: задати budget поїздки (сума, валюта)
+    HTTP->>HTTP: перевірити форму: сума ціла й додатна, валюта вказана
+    alt форма невалідна
+        HTTP-->>O: відмова з поясненням: budget — додатна сума в base currency
+    else форма валідна
+        HTTP->>T: SetTripBudget(tripId, budget)
+        T->>DB: знайти поїздку
+        alt поїздки немає
+            DB-->>T: порожньо
+            T-->>HTTP: TripNotFoundError
+            HTTP-->>O: відмова: поїздку не знайдено
+        else поїздка є (будь-який статус, включно finished — AC-09)
+            DB-->>T: trip (+ поточний budget / base currency, якщо були)
+            alt base currency вже зафіксована й валюта інша
+                T-->>HTTP: BudgetCurrencyMismatchError
+                HTTP-->>O: відмова з поясненням: budget задається саме в base currency поїздки
+            else перше задання або та сама валюта
+                T->>T: trip.setBudget(budget) — замінити значення, без журналу (AC-07)
+                T->>DB: зберегти поїздку (upsert)
+                DB-->>T: ok
+                T-->>HTTP: trip з budget
+                HTTP-->>O: підтвердження; підсумок відтепер показує блок залишку
+            end
+        end
+    end
 ```
 
-<!-- For XS/S: 1 flow above is enough. For M+: add 2-4 more (e.g. failure-mode flow, async flow). -->
+**Critical flow 2: owner додає витрату й одразу отримує overspend signal** — US-03, US-04; AC-04, AC-06 (ADR-0003).
 
-**Critical flow 2: <e.g. async event propagation>** — <if applicable, otherwise N/A>.
+```mermaid
+sequenceDiagram
+    actor O as owner
+    participant HTTP as HTTP presentation
+    participant E as BC expenses
+    participant T as BC trips
+    participant DB as PostgreSQL
+
+    O->>HTTP: додати витрату (сума, валюта, категорія, дата)
+    HTTP->>E: AddExpense(...)
+    E->>T: поїздка існує? приймає витрати? (TripStatusPort)
+    alt поїздки немає
+        T-->>E: не існує
+        E-->>HTTP: TripNotFoundError
+        HTTP-->>O: відмова: поїздку не знайдено
+    else поїздка finished
+        T-->>E: не приймає
+        E-->>HTTP: TripNotAcceptingExpensesError
+        HTTP-->>O: відмова: поїздка завершена
+    else приймає
+        T-->>E: так
+        E->>DB: зберегти витрату (завжди — budget ніколи не блокує)
+        DB-->>E: ok
+        E->>T: budget поїздки (TripBudgetPort)
+        alt budget не задано
+            T-->>E: немає
+            E-->>HTTP: { expense, budget: null }
+        else budget задано
+            T-->>E: budget у base currency
+            E->>DB: усі витрати поїздки
+            DB-->>E: expenses[]
+            E->>E: BudgetBlock: counted = витрати в base currency, uncounted = решта, remaining = budget − Σ counted (Balance, може бути < 0)
+            E-->>HTTP: { expense, budget: { remaining, counted, uncounted, overspend: remaining < 0 } }
+        end
+        HTTP-->>O: витрату прийнято; якщо remaining < 0 — overspend signal у тій самій відповіді
+    end
+```
+
+**Critical flow 3: owner відкриває підсумок поїздки з залишком і лічильником неврахованих** — US-02, US-04; AC-03, AC-03b, AC-05, AC-06, AC-06b (ADR-0002).
+
+```mermaid
+sequenceDiagram
+    actor O as owner
+    participant HTTP as HTTP presentation
+    participant E as BC expenses
+    participant T as BC trips
+    participant DB as PostgreSQL
+
+    O->>HTTP: відкрити підсумок поїздки
+    HTTP->>E: GetTripSummary(tripId)
+    E->>DB: усі витрати поїздки
+    DB-->>E: expenses[]
+    E->>E: рядки по (категорія, валюта) — як зараз
+    E->>T: budget поїздки (TripBudgetPort)
+    alt budget не задано
+        T-->>E: немає
+        E-->>HTTP: { lines, budget: null } — підсумок як раніше
+    else budget задано
+        T-->>E: budget у base currency
+        E->>E: BudgetBlock: counted / uncounted; remaining = budget − Σ counted
+        Note over E: усі витрати чужовалютні → remaining = повний budget, uncounted = усі (AC-06b)
+        E-->>HTTP: { lines, budget: { amount, remaining, counted, uncounted, overspend } }
+    end
+    HTTP-->>O: підсумок; від'ємний remaining показується від'ємним, не нулем (AC-03b)
+```
 
 ## 7. Deployment view
 
