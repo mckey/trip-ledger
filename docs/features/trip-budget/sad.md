@@ -325,25 +325,19 @@ Each top-3 goal from §1 expanded into a full scenario:
 
 ## 11. Risks and technical debt
 
-<!-- 🎯 Навіщо: ⭐ збирає ВСЕ, що може зламатись — і не лише технічне. Без §11 ризики   -->
-<!--           обговорюються на стендапах і губляться; борг лишається у голові того,    -->
-<!--           хто його прийняв.                                                          -->
-<!-- 📋 Що писати: таблиця ризик/борг — серйозність — мітигація — власник. Технічний    -->
-<!--           борг окремою секцією.                                                      -->
-<!-- 📌 Приклад: «EM не пушить — member не оновлює дані | High | …». Перший ризик —      -->
-<!--           часто продуктовий, не технічний. Це нормально.                            -->
-
-<!-- Severity column literals: Low / Medium / High for regular risks; "Open question" for rows
-     created by Step-7 `Save as Open Question` resolutions (see references/socratic-loop.md). -->
-
 | Risk / debt | Severity | Mitigation | Owner |
 |---|---|---|---|
-| <e.g. Outbox lag may reach hours during downstream outage> | Medium | <Alert >10 min, on-call playbook, retry backoff> | <DevOps> |
-| <e.g. No event schema versioning in v1> | Medium | <ADR-NNNN planned for v2, graceful handling of unknown fields> | <Backend> |
-| Open architectural decision: <decision-headline> | Open question | Resolve before <stage trigger or YYYY-MM-DD>; <inline rationale from Step-7 Save-as-OQ> | <owner> |
+| Мультивалютна поїздка робить remaining «брехливим»: порівнюються лише витрати в base currency (перший ризик — продуктовий, PRD §10) | High | Лічильник uncounted у кожному підсумку з budget (AC-06/06b); наступна фіча multi-currency-summary додає rate snapshot і повертає такі витрати у порівняння | я (автор) |
+| Breaking change форми відповідей: summary масив → об'єкт, додавання витрати → envelope (§5) | Medium | Єдиний клієнт — owner; оновити supertest-тести разом із кодом; контракт зафіксувати на стадії 6.6 до реалізації | я (автор) |
+| Brownfield: `FinishTrip` існує, але не змонтований у `tripsRouter` — AC-09 (budget у finished поїздці) недосяжний через API | Medium | Змонтувати завершення поїздки окремою задачею на стадії 6.7 або перевіряти AC-09 через стан репозиторію в тестах | я (автор) |
+| Перше задання budget фіксує base currency поїздки; зміни base currency у v1 немає — при помилковій валюті доведеться правити руками | Low | Валідація валюти на межі + чітке повідомлення (AC-02); правило зміни base currency визначить multi-currency-summary (її AC-07) | я (автор) |
+| Версія PostgreSQL не зафіксована в репо; toolchain drift — `ts-node-dev`, `eslint`, `node-pg-migrate` викликаються з Makefile, але їх немає у `package.json` | Low | Зафіксувати версію Postgres і додати dev-залежності на стадії 6.5 (міграції) | я (автор) |
+| Open architectural decision: rate-limit 60/хв на заміну budget | Open question | Resolve before stage 6.6 (api-forge); PRD §8 ставить due саме туди; v1 без ліміту — єдиний клієнт owner, межа доступу закрита API-key | я (автор) |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
-- <e.g. Goal entity is not versioned (immutable) — OK for v1, may need audit versioning in v2>
+- Budget без історії змін — свідомо (PRD §3); якщо після першої поїздки виявиться потрібною, міграція на 1:1-таблицю описана як «Neutral» у ADR-0001.
+- Dependency rule не enforce-иться інструментом (eslint-правило заплановане у docs/adr/0001) — до підключення тримаємось на code review.
+- `BudgetBlock` двічі читає поїздку в `AddExpense` (статус через `TripStatusPort`, budget через `TripBudgetPort`) — два in-process виклики замість одного; об'єднати, якщо QG-2 почне тиснути.
 
 ## 12. Glossary
 
