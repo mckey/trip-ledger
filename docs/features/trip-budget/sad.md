@@ -37,29 +37,31 @@ ticket: "-"
 
 ## 2. Constraints
 
-<!-- 🎯 Навіщо: §4 (стратегія) працює тільки коли §2 зафіксувала, ЩО ВЖЕ ЗАФІКСОВАНО:    -->
-<!--           стек, версії, дедлайн, регуляторні вимоги. Це вхід, не вихід.             -->
-<!-- 📋 Що писати: чотири блоки — Технічні / Організаційні / Конвенції / Регуляторні.     -->
-<!-- 📌 Приклад: «Postgres 18» (не «Postgres»); «дедлайн Q3 — жорсткий» (не «бажано»).    -->
-
-**Technical.**
-- <Language + version, e.g. Go 1.26>
-- <Framework + version, e.g. chi v5.1, pgx v5.7>
-- <Datastore + version, e.g. Postgres 18>
-- <Architecture convention, e.g. hexagonal per CLAUDE.md>
+**Technical.** (перевірено Explore-сканом репозиторію проти `package-lock.json` і `migrations/`)
+- TypeScript 7.0.2, `strict`, module `NodeNext`; Node ≥ 22 (`engines`), локально v24.18.0.
+- Express 5.2.1 — єдиний транспорт, JSON API без UI (SPEC.md).
+- pg 8.23.0 напряму, без ORM — docs/adr/0001; репозиторії пишуться руками під інтерфейси з `domain/`.
+- zod 4.4.3 — лише у `presentation/` (`safeParse` → 422 `{errors}`).
+- vitest 4.1.11 + supertest 7.2.2; тести колокуються як `*.test.ts`, HTTP-тести їздять поверх `createApp` з in-memory репозиторіями.
+- PostgreSQL — версія в репо ніде не зафіксована (немає docker-compose, лише `DATABASE_URL` у `.env.example`) → §11.
+- Схема: `trips(id TEXT PK, title, country, starts_at, ends_at, status CHECK planned|active|finished)`, `expenses(id TEXT PK, trip_id FK, amount_minor INTEGER CHECK ≥ 0, currency TEXT, category CHECK …, spent_at)`. Колонок budget/base currency **немає**.
+- Міграції — нумеровані SQL-файли у `migrations/` (`0001_…`, `0002_…`); наступна — `0003`.
 
 **Organisational.**
-- <Effort budget, e.g. 3 person-weeks>
-- <Deadline, e.g. 2026-Q3 hard>
-- <Team composition, e.g. 1 backend + 0.5 frontend>
+- Effort budget: 1 person-week (idea-brief §11 RICE E = 1; F1/F2 займали по вечору).
+- Deadline: довга поїздка у жовтні 2026 — **жорсткий** сезонний дедлайн: не встигнемо — наступне бойове вікно взимку (PRD §1).
+- Team: 1 людина (owner = розробник = архітектор).
 
 **Conventions.**
-- <Link to CLAUDE.md or project conventions>
-- <Naming, ID strategy, error-handling pattern>
+- CLAUDE.md: Clean Architecture, чотири шари на BC, залежності тільки всередину; `domain/` не імпортує фреймворків; `trips` і `expenses` не імпортують один одного — тільки `shared/` або через порт (`TripStatusPort` → `TripRepositoryStatusPort` в infrastructure).
+- Один use case = один клас з `execute()`; доменні сутності — класи без декораторів, інваріанти у конструкторі/методах.
+- Помилки: типізовані доменні Error-класи (`TripNotFoundError` → 404, `TripNotAcceptingExpensesError` → 409), zod-валідація → 422; мапінг лише у `presentation/`.
+- ID: `randomUUID()` (v4) генерується у application-шарі; гроші — `Money` у цілих мінорних одиницях, `add()` кидає на розбіжності валют.
+- AC → назва vitest-теста (конвенція з PRD/prd-forge): кожен AC з PRD §5 має читатись як `it('…')`.
 
 **Regulatory / external.**
-- <e.g. GDPR — user deletion behavior per ADR-NNNN>
-- <e.g. SOC2, PCI — applicable controls>
+- Немає. Дані — особисті фінансові записи owner-а, класифікація `internal`, нових PII-полів немає, security review N/A (PRD §6.1).
+- Межа доступу v1 — single-user: SPEC.md фіксує «один власник, API-key в .env»; механізм — §8, закриває PRD §8 OQ #1.
 
 ## 3. Context and scope
 
