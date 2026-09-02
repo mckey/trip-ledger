@@ -341,14 +341,18 @@ Each top-3 goal from §1 expanded into a full scenario:
 
 ## 12. Glossary
 
-<!-- 🎯 Навіщо: ⭐ СЛОВНИК ДОМЕНУ, який припиняє суперечки через рік («checkpoint —      -->
-<!--           weekly чи biweekly? Quarter — календарний чи фіскальний?»).                -->
-<!-- 📋 Що писати: таблиця термін / значення. Бізнес-терміни + технічні вперемішку.       -->
-<!--           Один термін може мати дві мови у заголовку: «Goal (Обʼєктив)».              -->
-<!-- 📌 Приклад: «Lesson | урок усередині курсу, що складається з блоків (text, video)». -->
-
 | Term | Meaning |
 |---|---|
-| <e.g. Goal> | <quarterly intent in statement form> |
-| <e.g. KR> | <Key Result — measurable target linked to a Goal> |
-| <e.g. Checkpoint> | <bi-weekly progress update on a KR> |
+| owner | Єдиний користувач інструмента: задає budget, вводить витрати, читає підсумок. NOT «user»/«admin» — інших ролей немає |
+| trip (поїздка) | Облікова одиниця подорожі зі статусом planned/active/finished і датами; контейнер витрат і носій budget |
+| expense (витрата) | Фактична витрата з сумою, валютою і датою, прив'язана до поїздки лише по її id |
+| budget (бюджет) | Планова стеля витрат на поїздку однією сумою в base currency. NOT summary (summary — факт, budget — план) |
+| base currency | Валюта, у якій задається budget і рахується перевитрата. NOT валюта введення витрати |
+| counted expense | Витрата у base currency поїздки, що входить у порівняння з budget |
+| uncounted expense | Витрата в іншій валюті: у порівняння не входить, лише рахується лічильником у підсумку. NOT невалідна витрата |
+| remaining (залишок) | budget мінус сума counted expenses; може бути від'ємним і показується від'ємним. NOT overspend |
+| overspend / overspend signal | Стан перевищення budget і повідомлення про нього у відповіді на додавання витрати. Сигнал, не заборона |
+| summary (підсумок) | Агрегат фактичних витрат поїздки по категоріях і валютах; з цією фічею — плюс блок budget/remaining/uncounted |
+| minor units (мінорні одиниці) | Копійки/центи; єдина форма зберігання й арифметики грошей у системі (QG-1) |
+| Balance | Технічний термін (не з CONTEXT): value object у `shared/` для знакових сум у мінорних одиницях — тип remaining (ADR-0004). Кандидат у CONTEXT через `fix-term` |
+| TripBudgetPort | Технічний термін: інтерфейс у `expenses/domain`, через який `expenses` читає budget поїздки з `trips` (ADR-0002) |
