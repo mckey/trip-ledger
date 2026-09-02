@@ -38,7 +38,7 @@ PRD US-01/US-04/US-06: owner необов'язково вказує курс д�
 
 ## Розглянуті варіанти
 
-1. **Nullable-колонка `rate_nano BIGINT NULL CHECK (rate_nano > 0)` на `expenses` + поле `rate?: Rate` на `Expense` + use case `SetExpenseRate`.** `AddExpense` приймає необов'язковий курс; `SetExpenseRate` знаходить витрату (`findById` — новий метод репозиторію), замінює курс через `expense.withRate()` і зберігає тим самим upsert. Статус поїздки **не** перевіряється — це не додавання витрати.
+1. **Nullable-колонки `rate_nano BIGINT NULL CHECK (rate_nano > 0)` і `rate_set_at TIMESTAMPTZ NULL` на `expenses` + поля `rate?: Rate`, `rateSetAt?: Date` на `Expense` + use case `SetExpenseRate`.** `AddExpense` приймає необов'язковий курс; `SetExpenseRate` знаходить витрату (`findById` — новий метод репозиторію), замінює курс через `expense.withRate()` (перезаписує й `rateSetAt = now` — час останнього задання, не журнал; потрібен для KPI PRD §7 «курс у день витрати») і зберігає тим самим upsert. Статус поїздки **не** перевіряється — це не додавання витрати. Обидва use case-и приймають курс лише коли у поїздки вже є base currency (`TripBudgetPort`), інакше `BaseCurrencyNotSetError` → 422 — курс «до нічого» неможливий.
 2. **Окрема таблиця `expense_rates(expense_id PK → expenses, rate_nano, set_at)`.** `expenses` не чіпаємо; історія курсів у майбутньому — зняти PK і додавати рядки. Ціна: другий репозиторій, JOIN у `findByTrip` на кожному підсумку, дві сутності для одного факту «витрата має курс», і все це заради історії, яку PRD виключив.
 
 ## Результат рішення
@@ -56,14 +56,15 @@ PRD US-01/US-04/US-06: owner необов'язково вказує курс д�
 
 **Негативні:**
 - `ExpenseRepository` отримує `findById` → змінюються `PostgresExpenseRepository`, `InMemoryExpenseRepository` і фейки у тестах.
-- Другий тип помилки «не знайдено» у `expenses` (`ExpenseNotFoundError` поруч із `TripNotFoundError`) — мапінг у presentation росте на один рядок.
+- Дві нові помилки у `expenses` (`ExpenseNotFoundError` → 404, `BaseCurrencyNotSetError` → 422) — мапінг у presentation росте на два рядки.
+- Друга колонка (`rate_set_at`) понад «одне nullable-поле» з PRD §9 — back-port у PRD (sad.md §11).
 
 **Нейтральні:**
 - Якщо історія курсів колись знадобиться — міграція на варіант 2 з перенесенням поточних значень; дешево за обсягом даних, але зміна схеми та репозиторію.
 
 ## Дельта даних
 
-- `migrations/0004_add_expense_rate.sql` — `ALTER TABLE expenses ADD COLUMN rate_nano BIGINT NULL CHECK (rate_nano > 0)`; expand-only; backfill: **немає** (курс 1 для base currency — похідне правило, ADR-0003). Тип і шкала колонки — ADR-0002.
+- `migrations/0004_add_expense_rate.sql` — `ALTER TABLE expenses ADD COLUMN rate_nano BIGINT NULL CHECK (rate_nano > 0), ADD COLUMN rate_set_at TIMESTAMPTZ NULL`; expand-only; backfill: **немає** (курс 1 для base currency — похідне правило, ADR-0003). Тип і шкала `rate_nano` — ADR-0002.
 
 ## Links
 

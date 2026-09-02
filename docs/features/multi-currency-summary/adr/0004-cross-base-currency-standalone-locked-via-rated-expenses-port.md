@@ -39,7 +39,7 @@ bc: "cross"
 
 ## Розглянуті варіанти
 
-1. **Base currency — самостійний атрибут; блокування через зворотний порт.** `CreateTrip` приймає необов'язкову `baseCurrency`; новий use case `SetTripBaseCurrency`; `Trip.setBaseCurrency(currency, hasRatedExpenses)` кидає `BaseCurrencyLockedError`, якщо є витрати з курсом. Факт «є витрати з курсом» — порт `RatedExpensesPort { hasRatedExpenses(tripId) }` у `trips/domain` з адаптером `ExpenseRepositoryRatedPort` у `trips/infrastructure` поверх `ExpenseRepository` — дзеркало `TripRepositoryStatusPort`. `SetTripBudget` лишається сумісним: фіксує base currency, якщо вона ще не задана. CHECK з 0003 послаблюється до `(budget_minor IS NULL OR base_currency IS NOT NULL)`.
+1. **Base currency — самостійний атрибут; блокування через зворотний порт.** `CreateTrip` приймає необов'язкову `baseCurrency`; новий use case `SetTripBaseCurrency`; `Trip.setBaseCurrency(currency, hasRatedExpenses)`: **перше задання дозволене завжди** (порт не питається), **зміна** вже заданої валюти кидає `BaseCurrencyLockedError`, якщо є витрати з **явним** rate snapshot (`rate_nano IS NOT NULL`; похідний курс 1 лок не тримає — такі витрати після зміни чесно стають «без курсу», ADR-0003). Факт «є витрати з курсом» — порт `RatedExpensesPort { hasRatedExpenses(tripId) }` у `trips/domain` з адаптером `ExpenseRepositoryRatedPort` у `trips/infrastructure` поверх `ExpenseRepository` — дзеркало `TripRepositoryStatusPort`. `SetTripBudget` лишається сумісним і йде тим самим `Trip.setBaseCurrency`, коли фіксує валюту разом із бюджетом. Дзеркально у `expenses`: курс приймається лише за наявної base currency (`BaseCurrencyNotSetError`), щоб витрата з курсом «до нічого» не заблокувала перше задання. CHECK трип-бюджету має дозволяти base currency без budget: `(budget_minor IS NULL OR base_currency IS NOT NULL)`.
 2. **Заборонити зміну base currency назавжди після першого задання.** Жодного зворотного порту, найпростіше. Але AC-07 явно передбачає зміну для поїздки без курсів, а помилково введена валюта лишає owner-а з ручними правками у БД — саме той біль, який trip-budget §11 уже зафіксувала.
 3. **Перенести власність над base currency у BC `expenses`** (окрема таблиця «налаштувань поїздки», якою володіє `expenses`). Порт не потрібен — усі факти в одному BC. Але поїздка — сутність `trips`; її валюта в чужому контексті ламає межі, а `SetTripBudget` (у `trips`) починає залежати від `expenses` — той самий зворотний зв'язок, лише прихований.
 
@@ -57,9 +57,11 @@ bc: "cross"
 - Правило живе в `Trip.setBaseCurrency`, тестується без БД і Express з фейковим портом.
 
 **Негативні:**
-- Перший двонапрямний зв'язок між BC через порти: без інструментального контролю наступний крок — прямий імпорт. Борг «eslint `import/no-restricted-paths`» (docs/adr/0001) стає терміновим — підключити разом із фічею (sad.md §11).
+- Перший двонапрямний зв'язок між BC через порти — і свідоме порушення ARCHITECTURE.md «`trips` … нічого не знає про витрати» (Override у sad.md §1; документ оновлюється разом із фічею). Без інструментального контролю наступний крок — прямий імпорт: борг «eslint `import/no-restricted-paths`» (docs/adr/0001) стає терміновим — підключити разом із фічею (sad.md §11).
+- Scope виходить за PRD §9 («одне nullable-поле, нових сутностей немає»): use case + маршрут у `trips` — back-port US/AC про base currency у PRD (sad.md §11).
 - `TripBudgetPort` з trip-budget розширюється до `{ baseCurrency, budget }` — правка її SAD §5 при реалізації.
-- CHECK із міграції 0003 треба послабити — якщо 0003 уже застосована, це `ALTER TABLE … DROP CONSTRAINT / ADD CHECK` у 0004.
+- CHECK із міграції 0003 треба записати у дозвільній формі: 0003 ще не написана — правильна форма іде одразу в неї; якщо десь уже застосована — `ALTER TABLE … DROP CONSTRAINT / ADD CHECK` у 0004.
+- Витрати у старій base currency після зміни валюти втрачають похідний курс 1 і показуються як «без курсу» — owner бачить це у лічильнику, але має дозаповнити їм явні курси.
 
 **Нейтральні:**
 - Обидва адаптери (`TripRepositoryStatusPort`, `ExpenseRepositoryRatedPort`) можна пізніше зібрати в один «anti-corruption» модуль без зміни доменів.
@@ -68,7 +70,7 @@ bc: "cross"
 ## Дельта даних
 
 - Нових колонок немає — використовує `trips.base_currency` з міграції 0003 (trip-budget).
-- `migrations/0004_add_expense_rate.sql` послаблює CHECK: `(budget_minor IS NULL) = (base_currency IS NULL)` → `(budget_minor IS NULL OR base_currency IS NOT NULL)`; expand-only; backfill немає.
+- CHECK на `trips` у дозвільній формі `(budget_minor IS NULL OR base_currency IS NOT NULL)` замість `(budget_minor IS NULL) = (base_currency IS NULL)`: пишеться одразу у ще не створену 0003 (правка trip-budget SAD §5); fallback для вже застосованої 0003 — `ALTER TABLE trips DROP CONSTRAINT … ADD CHECK (…)` у 0004; expand-only; backfill немає.
 
 ## Links
 
