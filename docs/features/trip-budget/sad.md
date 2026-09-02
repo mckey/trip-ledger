@@ -17,26 +17,23 @@ ticket: "-"
 
 ## 1. Introduction and goals
 
-<!-- 🎯 Навіщо: стабільна памʼять про «що + три головні якості + хто зацікавлений».     -->
-<!--           Через рік ніхто не згадає на словах, ЯКІ ТРИ ЯКОСТІ для системи критичні. -->
-<!-- 📋 Що писати: 1 абзац intent + 3 рядки топ-3 якості + таблиця stakeholders.        -->
-<!-- 📌 Приклад: «QG-1: швидкість редагування блоку p95 ≤500 мс»                         -->
+**Intent.** trip-budget додає до поїздки планову стелю витрат — один `budget` однією сумою в `base currency`. Далі система сама відповідає на два питання, які зараз owner рахує в голові: «скільки ще можна витратити» (`remaining` у підсумку поїздки) і «чи я вже вийшов за план» (`overspend signal` прямо у відповіді на додавання витрати). Витрати в інших валютах у порівняння не входять, але підсумок чесно показує їх лічильником `uncounted expenses` — це Approach A з idea-brief §13 (RICE 8), без конвертації валют, без прогнозів і без розбивки по категоріях.
 
-**Intent.** <One paragraph from PRD §Goals — what we're building and for whom.>
+Це brownfield-фіча: розширює два наявні bounded context-и (`src/trips`, `src/expenses`) і `src/shared`, нових процесів і сервісів не додає.
 
-**Top-3 quality goals (1-liners; full scenarios in §10):**
+**Top-3 quality goals (1-liners; full scenarios у §10; терміни у §12):**
 
-1. <e.g. "Availability under partial failure of downstream module">
-2. <e.g. "Performance for EM dashboard under team-scale growth">
-3. <e.g. "Recoverability of checkpoints with <30 min RTO">
+1. **QG-1 Точність грошей — 0 похибки округлення.** Усі суми (budget, витрати, remaining) живуть у цілих мінорних одиницях (integer), як `Money`; плаваючої точки в арифметиці немає (PRD §6 NFR «Точність грошей»).
+2. **QG-2 Латентність і пропускна здатність існуючих ендпойнтів не деградує.** Підсумок із блоком залишку — p95 ≤ 250 ms; задання/заміна budget — p95 ≤ 150 ms; ≥ 30 req/s на 1 інстанс (PRD §6 NFR).
+3. **QG-3 Ізоляція домену: budget — план, не заборона і не мутація.** Витрата приймається завжди, навіть з перевищенням (інваріант словника); зміна budget не мутує жодну витрату — remaining є шаром поверх (AC-04, AC-05); межа між BC зберігається — `expenses` бачить `trips` лише через порт (CLAUDE.md).
 
 **Stakeholders.**
 
 | Role | Interest | Sign-off owner? |
 |---|---|---|
-| <e.g. IC> | <feature usage> | No |
-| <e.g. EM> | <dashboard reads> | No |
-| <e.g. Tech Lead> | <SAD approval> | Yes |
+| `owner` | Єдиний користувач: задає budget, вводить витрати, читає підсумок; хоче дізнаватись про перевитрату в поїздці, а не вдома | No |
+| Tech Lead (я ж, автор фічі) | Архітектурний sign-off, ADR, дотримання dependency rule з CLAUDE.md | **Yes** |
+| PM | Відсутній (pet-проєкт); підтвердження §10 Quality Goals бере на себя owner | No |
 
 ## 2. Constraints
 
