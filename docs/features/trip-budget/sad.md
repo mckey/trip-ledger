@@ -105,45 +105,60 @@ Each tactical decision in later sections should be traceable to one of these str
 
 ## 5. Building block view
 
-<!-- 🎯 Навіщо: ВНУТРІШНЯ ДЕКОМПОЗИЦІЯ — модулі, контейнери, БД. Статична топологія:   -->
-<!--           хто з ким може говорити. Без §5 §6 (сценарії) не має словника учасників. -->
-<!-- 📋 Що писати: 1 абзац про стиль (шари/гексагональна/clean/на подіях) +            -->
-<!--           дерево папок + Mermaid C4Container.                                       -->
-<!-- 📌 Приклад: «web-app, content-api, media-worker, postgres, s3, cdn».                -->
+Стиль лишається тим самим, що й у F1/F2 — Clean Architecture з чотирма шарами на кожен BC (CLAUDE.md); фіча **розширює обидва наявні BC і `shared/`**, нового BC не створює (ADR-0001). `trips` отримує атрибути плану й один новий use case `SetTripBudget`; `expenses` — порт `TripBudgetPort`, його адаптер поверх `TripRepository` (дзеркало `TripRepositoryStatusPort`) і чисту функцію `BudgetBlock`, яку використовують і `AddExpense` (overspend signal), і `GetTripSummary` (блок залишку). Оскільки `Money` за інваріантом невід'ємний, а remaining за AC-03b має показуватись від'ємним, у `shared/` з'являється другий value object `Balance` зі знаком — `Money` не послаблюємо (**ADR-0004**).
 
-<One paragraph: layered / hexagonal / clean / event-driven. Why.>
+Два наслідки для контрактів, які фіксуються остаточно на стадії 6.6 (API contracts): відповідь підсумку перетворюється з голого масиву `TripSummaryLine[]` на об'єкт `{ lines, budget }`, а відповідь додавання витрати — з голого `Expense` на envelope `{ expense, budget }`. Обидва — breaking change для єдиного клієнта (owner) і для наявних supertest-тестів → §11.
 
-**Internal decomposition:**
+**Internal decomposition (дельта: `+` новий файл, `~` змінюється):**
 
 ```
-<e.g. internal/modules/goals/>
-├── domain/       <entities + sentinel errors>
-├── app/          <use cases / services>
-├── infra/        <repository + outbox impl>
-├── ports/        <HTTP handlers, DTOs, error mapping>
-└── module.go     <self-wiring>
+src/
+├── shared/
+│   ├── Money.ts                                   (без змін: невід'ємні мінорні одиниці)
+│   └── Balance.ts                               + ADR-0004: знакові мінорні одиниці + валюта; of(Money).minus(Money), isNegative()
+├── trips/
+│   ├── domain/Trip.ts                           ~ + budget?: Money, baseCurrency?: string, setBudget(); BudgetCurrencyMismatchError
+│   ├── application/SetTripBudget.ts             + один use case = одна дія; дозволений у будь-якому статусі, включно finished (AC-09)
+│   ├── infrastructure/PostgresTripRepository.ts ~ мапінг budget_minor / base_currency (nullable)
+│   └── presentation/tripsRouter.ts              ~ маршрут задання budget + zod-схема (сума ціла додатна, валюта)
+├── expenses/
+│   ├── domain/Expense.ts                        ~ + інтерфейс TripBudgetPort { budget(tripId): Promise<{amount: Money} | null> }
+│   ├── application/BudgetBlock.ts               + чиста функція: (budget, expenses[]) → { remaining: Balance, counted, uncounted, overspend }
+│   ├── application/AddExpense.ts                ~ повертає { expense, budget: BudgetBlock | null } — ADR-0003
+│   ├── application/GetTripSummary.ts            ~ повертає { lines: TripSummaryLine[], budget: BudgetBlock | null } — ADR-0002
+│   ├── infrastructure/TripRepositoryBudgetPort.ts + адаптер порту поверх TripRepository (як TripRepositoryStatusPort)
+│   └── presentation/expensesRouter.ts           ~ envelope відповіді; summary → об'єкт
+├── presentation/app.ts                          ~ зшивання TripBudgetPort; API-key middleware (§8)
+migrations/
+└── 0003_add_trip_budget.sql                     + ALTER TABLE trips ADD budget_minor INTEGER NULL CHECK (budget_minor > 0),
+                                                     ADD base_currency TEXT NULL; CHECK ((budget_minor IS NULL) = (base_currency IS NULL))
 ```
 
 **C4 Container (L2):**
 
 ```mermaid
 C4Container
-    title <system> — Containers
+    title trip-ledger — Containers (дельта фічі trip-budget)
 
-    Person(user, "<User>")
+    Person(owner, "owner", "задає budget, додає витрати, читає підсумок")
 
-    Container_Boundary(boundary, "<Our System>") {
-        Container(web, "<Web/API container>", "<technology>", "<purpose>")
-        Container(svc, "<Service container>", "<technology>", "<purpose>")
-        ContainerDb(db, "<DB>", "<technology>", "<purpose>")
+    Container_Boundary(api, "trip-ledger — один Node-процес (Express 5.2.1)") {
+        Container(http, "HTTP presentation", "Express 5 + zod 4", "tripsRouter (+ задання budget), expensesRouter (envelope з overspend signal, summary з блоком budget), API-key middleware")
+        Container(trips, "BC trips", "TypeScript", "Trip (+ budget, base currency), SetTripBudget, PostgresTripRepository")
+        Container(expenses, "BC expenses", "TypeScript", "AddExpense (+ overspend signal), GetTripSummary (+ remaining, uncounted), BudgetBlock, адаптер TripBudgetPort")
+        Container(shared, "shared", "TypeScript", "value objects Money (невід'ємний) і Balance (зі знаком)")
     }
 
-    System_Ext(ext, "<External>", "<purpose>")
+    ContainerDb(pg, "PostgreSQL", "trips, expenses", "міграція 0003: trips.budget_minor, trips.base_currency (nullable, expand-only)")
 
-    Rel(user, web, "<interaction>", "<protocol>")
-    Rel(web, svc, "<service calls>")
-    Rel(svc, db, "<reads/writes>", "<driver>")
-    Rel(svc, ext, "<emits>", "<protocol>")
+    Rel(owner, http, "REST-запити", "HTTP/JSON, локально")
+    Rel(http, trips, "виклики use case-ів", "in-process")
+    Rel(http, expenses, "виклики use case-ів", "in-process")
+    Rel(expenses, trips, "TripStatusPort + TripBudgetPort", "in-process, лише через порт")
+    Rel(trips, shared, "Money")
+    Rel(expenses, shared, "Money, Balance")
+    Rel(trips, pg, "trips: читає/пише, upsert", "pg 8.23 SQL")
+    Rel(expenses, pg, "expenses: читає/пише", "pg 8.23 SQL")
 ```
 
 ## 6. Runtime view
