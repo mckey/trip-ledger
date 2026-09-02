@@ -46,7 +46,7 @@ Remaining = budget − Σ counted expenses: budget живе у `trips` (ADR-0001
 
 **Позитивні:**
 - Dependency rule не порушується; нових напрямків залежності немає.
-- `BudgetBlock` — чиста функція `(budget, expenses[]) → { remaining, counted, uncounted, overspend }`, юніт-тестується напряму (QG-1, QG-3).
+- `BudgetBlock` — чиста функція `(budget, expenses[]) → { budget, remaining, counted, uncounted, overspend }`, одна й та сама форма у відповіді підсумку і у відповіді додавання витрати; юніт-тестується напряму (QG-1, QG-3).
 - multi-currency-summary розширить ту саму функцію (counted = має rate snapshot), не додаючи другого агрегата.
 
 **Негативні:**

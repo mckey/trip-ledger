@@ -46,6 +46,7 @@ ticket: "-"
 - PostgreSQL — версія в репо ніде не зафіксована (немає docker-compose, лише `DATABASE_URL` у `.env.example`) → §11.
 - Схема: `trips(id TEXT PK, title, country, starts_at, ends_at, status CHECK planned|active|finished)`, `expenses(id TEXT PK, trip_id FK, amount_minor INTEGER CHECK ≥ 0, currency TEXT, category CHECK …, spent_at)`. Колонок budget/base currency **немає**.
 - Міграції — нумеровані SQL-файли у `migrations/` (`0001_…`, `0002_…`); наступна — `0003`.
+- Каналів доставки поза відповіддю сервісу (UI, пуші, листи) немає і не буде у v1 (PRD §3) — єдиний спосіб щось повідомити owner-у — тіло HTTP-відповіді на його ж запит.
 
 **Organisational.**
 - Effort budget: 1 person-week (idea-brief §11 RICE E = 1; F1/F2 займали по вечору).
@@ -117,18 +118,19 @@ src/
 │   ├── Money.ts                                   (без змін: невід'ємні мінорні одиниці)
 │   └── Balance.ts                               + ADR-0004: знакові мінорні одиниці + валюта; of(Money).minus(Money), isNegative()
 ├── trips/
-│   ├── domain/Trip.ts                           ~ + budget?: Money, baseCurrency?: string, setBudget(); BudgetCurrencyMismatchError
+│   ├── domain/Trip.ts                           ~ + budget?: Money, baseCurrency?: string, setBudget()
+│   ├── domain/errors.ts                         + TripDoesNotExistError, BudgetCurrencyMismatchError — власні помилки BC trips, без імпортів з expenses
 │   ├── application/SetTripBudget.ts             + один use case = одна дія; дозволений у будь-якому статусі, включно finished (AC-09)
 │   ├── infrastructure/PostgresTripRepository.ts ~ мапінг budget_minor / base_currency (nullable)
-│   └── presentation/tripsRouter.ts              ~ маршрут задання budget + zod-схема (сума ціла додатна, валюта)
+│   └── presentation/tripsRouter.ts              ~ маршрут задання budget + zod-схема (сума ціла додатна, валюта — код ISO 4217 ^[A-Z]{3}$)
 ├── expenses/
 │   ├── domain/Expense.ts                        ~ + інтерфейс TripBudgetPort { budget(tripId): Promise<{amount: Money} | null> }
-│   ├── application/BudgetBlock.ts               + чиста функція: (budget, expenses[]) → { remaining: Balance, counted, uncounted, overspend }
+│   ├── application/BudgetBlock.ts               + чиста функція: (budget, expenses[]) → { budget: Money, remaining: Balance, counted, uncounted, overspend }
 │   ├── application/AddExpense.ts                ~ повертає { expense, budget: BudgetBlock | null } — ADR-0003
 │   ├── application/GetTripSummary.ts            ~ повертає { lines: TripSummaryLine[], budget: BudgetBlock | null } — ADR-0002
 │   ├── infrastructure/TripRepositoryBudgetPort.ts + адаптер порту поверх TripRepository (як TripRepositoryStatusPort)
 │   └── presentation/expensesRouter.ts           ~ envelope відповіді; summary → об'єкт
-├── presentation/app.ts                          ~ зшивання TripBudgetPort; API-key middleware (§8)
+├── presentation/app.ts                          ~ зшивання TripBudgetPort; API-key middleware і request-timing middleware (§8)
 migrations/
 └── 0003_add_trip_budget.sql                     + ALTER TABLE trips ADD budget_minor INTEGER NULL CHECK (budget_minor > 0),
                                                      ADD base_currency TEXT NULL; CHECK ((budget_minor IS NULL) = (base_currency IS NULL))
@@ -143,7 +145,7 @@ C4Container
     Person(owner, "owner", "задає budget, додає витрати, читає підсумок")
 
     Container_Boundary(api, "trip-ledger — один Node-процес (Express 5.2.1)") {
-        Container(http, "HTTP presentation", "Express 5 + zod 4", "tripsRouter (+ задання budget), expensesRouter (envelope з overspend signal, summary з блоком budget), API-key middleware")
+        Container(http, "HTTP presentation", "Express 5 + zod 4", "tripsRouter (+ задання budget), expensesRouter (envelope з overspend signal, summary з блоком budget), API-key + request-timing middleware")
         Container(trips, "BC trips", "TypeScript", "Trip (+ budget, base currency), SetTripBudget, PostgresTripRepository")
         Container(expenses, "BC expenses", "TypeScript", "AddExpense (+ overspend signal), GetTripSummary (+ remaining, uncounted), BudgetBlock, адаптер TripBudgetPort")
         Container(shared, "shared", "TypeScript", "value objects Money (невід'ємний) і Balance (зі знаком)")
@@ -183,7 +185,7 @@ sequenceDiagram
         T->>DB: знайти поїздку
         alt поїздки немає
             DB-->>T: порожньо
-            T-->>HTTP: TripNotFoundError
+            T-->>HTTP: TripDoesNotExistError (власна помилка BC trips)
             HTTP-->>O: відмова: поїздку не знайдено
         else поїздка є (будь-який статус, включно finished — AC-09)
             DB-->>T: trip (+ поточний budget / base currency, якщо були)
@@ -235,7 +237,7 @@ sequenceDiagram
             E->>DB: усі витрати поїздки
             DB-->>E: expenses[]
             E->>E: BudgetBlock: counted = витрати в base currency, uncounted = решта, remaining = budget − Σ counted (Balance, може бути < 0)
-            E-->>HTTP: { expense, budget: { remaining, counted, uncounted, overspend: remaining < 0 } }
+            E-->>HTTP: { expense, budget: { budget, remaining, counted, uncounted, overspend } }
         end
         HTTP-->>O: витрату прийнято; якщо remaining < 0 — overspend signal у тій самій відповіді
     end
@@ -264,7 +266,7 @@ sequenceDiagram
         T-->>E: budget у base currency
         E->>E: BudgetBlock: counted / uncounted; remaining = budget − Σ counted
         Note over E: усі витрати чужовалютні → remaining = повний budget, uncounted = усі (AC-06b)
-        E-->>HTTP: { lines, budget: { amount, remaining, counted, uncounted, overspend } }
+        E-->>HTTP: { lines, budget: { budget, remaining, counted, uncounted, overspend } } — та сама форма блоку, що у flow 2
     end
     HTTP-->>O: підсумок; від'ємний remaining показується від'ємним, не нулем (AC-03b)
 ```
@@ -273,14 +275,14 @@ sequenceDiagram
 
 <!-- N/A: S-фіча переюзає існуючий деплой — один Node-процес (Express) + PostgreSQL; реплік, порогів масштабування й моніторингу не змінює -->
 
-Обґрунтування одним рядком: фіча додає дві nullable-колонки, один use case і чисту функцію всередині того самого процесу; жодного нового воркера, черги чи сховища (узгоджено з §5 — у C4 Container нового deployment unit немає). Обсяг даних: 4–6 поїздок на рік × ≤ 300 витрат (PRD §1: 3–10 на день) — далеко від будь-яких порогів партиціонування.
+Обґрунтування одним рядком: фіча додає дві nullable-колонки, один use case і чисту функцію всередині того самого процесу; жодного нового воркера, черги чи сховища (узгоджено з §5 — у C4 Container нового deployment unit немає). Обсяг даних: 4–6 поїздок на рік × ≤ 300 витрат (припущення SAD: 30-денна поїздка × 10 витрат/день; PRD §1 дає лише «3–10 витрат на день») — далеко від будь-яких порогів партиціонування.
 
 ## 8. Crosscutting concepts
 
 | Concept | Convention | Where defined |
 |---|---|---|
-| Error handling | Типізовані доменні помилки → мапінг у `presentation/`: відсутність → 404 (`TripNotFoundError`), відмова state-машини → 409 (`TripNotAcceptingExpensesError`), порушення правила даних → 422 (zod-валідація та новий `BudgetCurrencyMismatchError`). Overspend — **не помилка**, а поле відповіді | CLAUDE.md «Конвенції»; `src/expenses/domain/errors.ts`; тут |
-| Validation | zod лише на межі `presentation/`; сума budget — `z.number().int().positive()`, валюта — непорожній рядок (довідника валют у v1 немає, як і в `Money`) | CLAUDE.md; `expensesRouter.ts` |
+| Error handling | Типізовані доменні помилки → мапінг у `presentation/`: відсутність → 404 (`TripNotFoundError` у expenses, новий `TripDoesNotExistError` у trips), відмова state-машини → 409 (`TripNotAcceptingExpensesError`), порушення правила даних → 422 (zod-валідація та новий `BudgetCurrencyMismatchError`). Кожен BC володіє своїми класами помилок — `trips` не імпортує `expenses/domain/errors.ts`. Overspend — **не помилка**, а поле відповіді | CLAUDE.md «Конвенції»; `src/expenses/domain/errors.ts`; новий `src/trips/domain/errors.ts` |
+| Validation | zod лише на межі `presentation/`; сума budget — `z.number().int().positive()`, валюта — код ISO 4217 `^[A-Z]{3}$` (PRD §6.1: «валюта — код з довідника»; повного довідника у v1 немає — патерн замість таблиці). Наявна схема витрат приймає будь-який непорожній рядок — вирівняти тією ж константою (§11) | CLAUDE.md; `tripsRouter.ts`, `expensesRouter.ts` |
 | Money & precision | `Money` — цілі мінорні одиниці, невід'ємний, `add()` тільки в одній валюті; `Balance` — знакові мінорні одиниці для remaining (ADR-0004). Плаваюча точка заборонена | `src/shared/Money.ts`; ADR-0004 |
 | ID strategy | `randomUUID()` (v4) у application-шарі; budget власного id не має — атрибут `Trip` (ADR-0001) | `AddExpense.ts`, `CreateTrip.ts` |
 | Access boundary (AC-08) | v1 single-user: сервер слухає `127.0.0.1`; middleware у `app.ts` перевіряє заголовок з `API_KEY` (уже передбачений `.env.example` і SPEC.md) і відповідає 401 без деталей — існування поїздки не розкривається. Закриває PRD §8 OQ #1 (варіант «локальний запуск + owner-ключ») | SPEC.md «Non-goals»; `.env.example`; тут |
@@ -288,7 +290,7 @@ sequenceDiagram
 | Persistence & migrations | Нумеровані SQL-файли; 0003 — expand-only (nullable колонки + CHECK), старі рядки валідні без backfill; upsert `ON CONFLICT (id) DO UPDATE` як у наявних репозиторіях | `migrations/`; `PostgresTripRepository.ts` |
 | Logging | `console` як зараз; `LOG_LEVEL` з `.env.example` поки не читається — без змін у цій фічі | `.env.example` |
 | Rate limiting | Не вводиться у v1 → відкрите питання у §11 (PRD §8 OQ #3, due стадія 6.6) | §11 |
-| Observability | Немає (свідомо: латентність з PRD §6 міряємо k6 smoke у CI та таймінгами supertest, не трасуванням) | §10 |
+| Observability | Трасування (OTel) свідомо не вводимо. Натомість request-timing middleware в `app.ts` пише `route`, `status`, `duration_ms` у `console` (JSON-рядок) — post-release p95 для PRD §7 KPI «latency підсумку» рахується з логів; латентність у CI — k6 smoke (§10) | `app.ts`; §10, §11 |
 | Internationalisation | N/A — повідомлення помилок англійською, як у наявному коді | — |
 
 ## 9. Architecture decisions
@@ -314,9 +316,9 @@ Each top-3 goal from §1 expanded into a full scenario:
 - **How verify:** `src/shared/Balance.test.ts` — `it('subtracts money in minor units without rounding')`, property-тест на випадкових цілих; `GetTripSummary.test.ts` — `it('remaining equals budget minus counted expenses in minor units')`, `it('shows negative remaining as negative, not zero')` (AC-03b).
 
 **QG-2. Латентність і пропускна здатність**
-- **When:** поїздка з 300 витратами (верхня межа PRD §1: 10 на день × 30 днів), budget задано; owner відкриває підсумок і замінює budget.
+- **When:** поїздка з 300 витратами (припущення SAD: 30-денна поїздка × 10 витрат/день — PRD §1 дає лише «3–10 витрат на день», профілю навантаження у PRD немає), budget задано; owner відкриває підсумок і замінює budget.
 - **Then:** підсумок із блоком залишку — p95 ≤ 250 ms; задання/заміна budget — p95 ≤ 150 ms; сервіс тримає ≥ 30 req/s на 1 інстанс (PRD §6 NFR, числа дослівно).
-- **How verify:** k6 smoke у CI на `GET /trips/:id/summary` і на write-ендпойнт budget (PRD §6 «Measurement»); локально — таймінг у supertest-тесті `it('summary with budget block responds under 250 ms for 300 expenses')`.
+- **How verify:** k6 smoke у CI на `GET /trips/:id/summary` і на write-ендпойнт budget (PRD §6 «Measurement»); локально — таймінг у supertest-тесті `it('summary with budget block responds under 250 ms for 300 expenses')`; post-release — p95 з request-timing логів (§8 Observability) для PRD §7 KPI.
 
 **QG-3. Ізоляція домену**
 - **When:** (а) нова витрата перевищує budget; (б) owner замінює budget за наявності витрат; (в) у `expenses` з'являється код, що імпортує `trips` напряму.
@@ -332,12 +334,14 @@ Each top-3 goal from §1 expanded into a full scenario:
 | Brownfield: `FinishTrip` існує, але не змонтований у `tripsRouter` — AC-09 (budget у finished поїздці) недосяжний через API | Medium | Змонтувати завершення поїздки окремою задачею на стадії 6.7 або перевіряти AC-09 через стан репозиторію в тестах | я (автор) |
 | Перше задання budget фіксує base currency поїздки; зміни base currency у v1 немає — при помилковій валюті доведеться правити руками | Low | Валідація валюти на межі + чітке повідомлення (AC-02); правило зміни base currency визначить multi-currency-summary (її AC-07) | я (автор) |
 | Версія PostgreSQL не зафіксована в репо; toolchain drift — `ts-node-dev`, `eslint`, `node-pg-migrate` викликаються з Makefile, але їх немає у `package.json` | Low | Зафіксувати версію Postgres і додати dev-залежності на стадії 6.5 (міграції) | я (автор) |
+| PRD §6 і §7 посилаються на «метрику summary, що вже існує» — у коді жодних метрик немає (критик, F3) | Low | Request-timing middleware (§8) з'являється разом із фічею; post-release p95 рахується з логів — без нової інфраструктури | я (автор) |
 | Open architectural decision: rate-limit 60/хв на заміну budget | Open question | Resolve before stage 6.6 (api-forge); PRD §8 ставить due саме туди; v1 без ліміту — єдиний клієнт owner, межа доступу закрита API-key | я (автор) |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
 - Budget без історії змін — свідомо (PRD §3); якщо після першої поїздки виявиться потрібною, міграція на 1:1-таблицю описана як «Neutral» у ADR-0001.
 - Dependency rule не enforce-иться інструментом (eslint-правило заплановане у docs/adr/0001) — до підключення тримаємось на code review.
 - `BudgetBlock` двічі читає поїздку в `AddExpense` (статус через `TripStatusPort`, budget через `TripBudgetPort`) — два in-process виклики замість одного; об'єднати, якщо QG-2 почне тиснути.
+- Схема додавання витрати приймає валюту будь-яким непорожнім рядком — вирівняти під ISO 4217 тією ж zod-константою, що й budget (поза scope PRD, але одна константа на два роутери).
 
 ## 12. Glossary
 
