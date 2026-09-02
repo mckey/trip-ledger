@@ -293,17 +293,16 @@ sequenceDiagram
 
 ## 9. Architecture decisions
 
-<!-- 🎯 Навіщо: ЗВОРОТНИЙ ІНДЕКС на папку adr/. `ls adr/` дає файли, §9 дає семантику —    -->
-<!--           чому вони існують, до якого зрізу SAD привʼязані, у якому статусі.           -->
-<!-- 📋 Що писати: таблиця з 4 колонками. Один рядок на ADR. Mixed status — це OK.         -->
-<!-- 📌 Приклад: «0001 | Зберігати урок як таблицю блоків | Accepted | §4».                -->
-
 | # | Title | Status | Section |
 |---|---|---|---|
-| <NNNN> | <imperative — e.g. "Use sliding window for rate limiting"> | Accepted | §<N> |
-| <NNNN> | <imperative — e.g. "Co-locate outbox worker in API process"> | Accepted | §<N> |
+| 0001 | Зберігати budget і base currency колонками на `trips` (атрибути `Trip`), не окремою сутністю | Accepted | §4 |
+| 0002 | Рахувати remaining і uncounted у BC `expenses` через порт `TripBudgetPort` | Accepted | §4, §5 |
+| 0003 | Повертати overspend signal синхронно у відповіді на додавання витрати | Accepted | §4 |
+| 0004 | Ввести знаковий value object `Balance` у `shared`, не послаблювати інваріант `Money` | Accepted | §5, §8 |
 
-ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
+ADR files live under `docs/features/trip-budget/adr/NNNN-<title>.md`.
+
+Дивись: [[adr/0001-budget-as-columns-on-trips]] · [[adr/0002-remaining-computed-in-expenses-via-trip-budget-port]] · [[adr/0003-overspend-signal-inline-in-add-expense-response]] · [[adr/0004-signed-balance-value-object-in-shared]]
 
 ## 10. Quality requirements
 
