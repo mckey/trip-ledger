@@ -162,116 +162,204 @@ C4Container
 
 ## 6. Runtime view
 
-<!-- arch-forge: учасники = контейнери §5, повідомлення семантичні (без HTTP-дієслів/шляхів/статус-кодів — це стадія API).
-     XS/S: 1–3 flow (по одному на ключову US + відмови у alt-гілках); M+: 3–5, включно з failure-mode.
-     Кожен flow закінчується рядком «Тестовий слід» — назви vitest/supertest-тестів, що його доводять. -->
+Учасники — контейнери з §5; повідомлення семантичні, без HTTP-дієслів і шляхів (ендпойнт-рівневі діаграми — стадія API contracts).
 
-**Critical flow 1: <назва>** — <US-xx; AC-xx>.
+**Critical flow 1: owner додає витрату — з курсом, без курсу або у base currency** — US-01, US-05; AC-01, AC-02, AC-06.
 
 ```mermaid
 sequenceDiagram
-    actor O as <роль>
+    actor O as owner
     participant HTTP as HTTP presentation
-    participant B as BC <bc>
+    participant E as BC expenses
+    participant T as BC trips
     participant DB as PostgreSQL
 
-    O->>HTTP: <семантична дія>
-    HTTP->>B: <UseCase(...)>
-    B->>DB: <що читає/пише>
-    DB-->>B: <результат>
-    alt <відмова за правилом>
-        B-->>HTTP: <TypedError>
-        HTTP-->>O: відмова з поясненням
-    else ок
-        B-->>HTTP: <результат>
-        HTTP-->>O: <що бачить користувач>
+    O->>HTTP: додати витрату (сума, валюта, категорія, дата, курс?)
+    HTTP->>HTTP: перевірити форму: курс, якщо є, — додатне число, ≤ 6 знаків
+    alt курс нульовий або від'ємний
+        HTTP-->>O: відмова з поясненням: курс має бути додатним числом (AC-02)
+    else форма валідна
+        HTTP->>E: AddExpense(..., rate?)
+        E->>T: поїздка існує? приймає витрати? (TripStatusPort)
+        alt поїздка finished
+            T-->>E: не приймає
+            E-->>HTTP: TripNotAcceptingExpensesError
+            HTTP-->>O: відмова: поїздка завершена
+        else приймає
+            T-->>E: так
+            E->>DB: зберегти витрату (сума й валюта введення; rate_nano або NULL)
+            DB-->>E: ok
+            E->>T: budget і base currency поїздки (TripBudgetPort)
+            T-->>E: base currency (+ budget або «не задано»)
+            Note over E: валюта витрати = base currency ⇒ ефективний курс 1, поле не потрібне (AC-06)
+            E->>E: BudgetBlock над витратами поїздки (counted за ефективним курсом)
+            E-->>HTTP: { expense (з rate), budget: BudgetBlock | null }
+            HTTP-->>O: витрату прийнято; якщо курс є або валюта базова — вона вже у converted total і в залишку
+        end
     end
 ```
 
-**Тестовий слід:** `it('<happy path>')`, `it('<відмова>')` — <файл>.
+**Тестовий слід:** `it('stores an optional rate snapshot with a foreign-currency expense')`, `it('rejects a zero or negative rate')`, `it('counts a base-currency expense with an implied rate of 1 without asking for a rate')` — `src/expenses/application/AddExpense.test.ts`, `src/expenses/presentation/expenses.http.test.ts`.
 
-**Critical flow 2: <назва>** — <або «немає — XS-фіча з одним flow»>.
+**Critical flow 2: owner відкриває підсумок — сирі суми, converted total, лічильник без курсу, залишок** — US-02, US-03; AC-03, AC-03b, AC-04, AC-09.
+
+```mermaid
+sequenceDiagram
+    actor O as owner
+    participant HTTP as HTTP presentation
+    participant E as BC expenses
+    participant T as BC trips
+    participant DB as PostgreSQL
+
+    O->>HTTP: відкрити підсумок поїздки
+    HTTP->>E: GetTripSummary(tripId)
+    E->>DB: усі витрати поїздки
+    DB-->>E: expenses[] (з rate_nano або NULL)
+    E->>E: рядки по (категорія, валюта) — сирі суми, як зараз
+    E->>T: base currency і budget поїздки (TripBudgetPort)
+    alt base currency не задана
+        T-->>E: немає
+        E-->>HTTP: { lines, converted: null, budget: null } — підсумок як раніше
+    else base currency задана
+        T-->>E: base currency (+ budget або «не задано»)
+        E->>E: для кожної витрати: ефективний курс = rate або 1 (базова валюта) або відсутній
+        E->>E: converted total = Σ Rate.apply(amount) (half-up, minor units); withoutRate = кількість без курсу
+        Note over E: та сама функція BudgetBlock: remaining = budget − converted Σ counted (Balance зі знаком)
+        E-->>HTTP: { lines, converted: { total, withoutRate }, budget: BudgetBlock | null }
+    end
+    HTTP-->>O: сирі суми ТА converted total поруч; лічильник чесно каже, скільки витрат поза перерахунком
+```
+
+**Тестовий слід:** `it('shows raw per-currency totals and a converted total from rated expenses only')`, `it('keeps precision for tiny-rate currencies (no rounding to zero)')` (AC-03b), `it('counts expenses without a rate next to the converted total')`, `it('includes a rated foreign-currency expense in the budget remaining')` (AC-09) — `src/expenses/application/GetTripSummary.test.ts`.
+
+**Critical flow 3: постфактум-правки — курс на витраті у finished поїздці та спроба змінити base currency** — US-04, US-06; AC-05, AC-07, AC-08.
+
+```mermaid
+sequenceDiagram
+    actor O as owner
+    participant HTTP as HTTP presentation
+    participant E as BC expenses
+    participant T as BC trips
+    participant DB as PostgreSQL
+
+    O->>HTTP: замінити курс на збереженій витраті (поїздка finished)
+    HTTP->>E: SetExpenseRate(expenseId, rate)
+    E->>DB: знайти витрату
+    alt витрати немає
+        DB-->>E: порожньо
+        E-->>HTTP: ExpenseNotFoundError
+        HTTP-->>O: відмова: витрату не знайдено
+    else витрата є
+        DB-->>E: expense
+        Note over E: статус поїздки НЕ перевіряється — finished блокує нові витрати, не атрибути наявних (AC-08)
+        E->>E: expense.withRate(rate) — сума й валюта введення не змінюються
+        E->>DB: зберегти витрату (upsert)
+        DB-->>E: ok
+        E-->>HTTP: expense з новим курсом
+        HTTP-->>O: курс замінено; попереднє значення ніде не зберігається (AC-05)
+    end
+
+    O->>HTTP: змінити base currency поїздки
+    HTTP->>T: SetTripBaseCurrency(tripId, currency)
+    T->>E: у поїздки є витрати з курсом? (RatedExpensesPort)
+    alt є хоча б одна
+        E-->>T: так
+        T-->>HTTP: BaseCurrencyLockedError
+        HTTP-->>O: відмова з поясненням: зафіксовані курси втратили б сенс — спершу поїздка без курсів (AC-07)
+    else немає
+        E-->>T: ні
+        T->>DB: зберегти поїздку з новою base currency
+        DB-->>T: ok
+        T-->>HTTP: trip
+        HTTP-->>O: base currency змінено
+    end
+```
+
+**Тестовий слід:** `it('replaces the rate on a stored expense even when the trip is finished')` (AC-08), `it('does not keep the previous rate anywhere')` (AC-05) — `src/expenses/application/SetExpenseRate.test.ts`; `it('blocks changing base currency while rated expenses exist')`, `it('allows changing base currency for a trip without rated expenses')` — `src/trips/application/SetTripBaseCurrency.test.ts`.
 
 ## 7. Deployment view
 
-<!-- arch-forge: дефолт для фіч в одному процесі — N/A з фіксованим текстом нижче + одне речення обсягу даних.
-     Реальна топологія лише якщо фіча додає процес/воркер/чергу/сховище (тоді має бути узгоджена з §5). -->
-
 <!-- N/A: фіча переюзає існуючий деплой — один Node-процес + PostgreSQL; реплік, порогів масштабування й моніторингу не змінює -->
 
-Обґрунтування одним рядком: <що додає фіча; обсяг даних у цифрах з PRD §1>.
+Обґрунтування одним рядком: одна nullable-колонка, два use case-и й один value object усередині того самого процесу; обсяг — 4–6 поїздок на рік × ≤ 300 витрат, 2–3 валюти на поїздку (PRD §1).
 
 ## 8. Crosscutting concepts
 
-<!-- arch-forge: рядки передзаповнені дефолтами мого стека — підтверди або зміни; нові рядки лише якщо PRD §6/§6.1 цього вимагає.
-     Рішення з 0–1 критерієм радіусу впливу живуть тут inline; що відкладено — рядок у §11 з owner+due. -->
-
 | Concept | Convention | Where defined |
 |---|---|---|
-| Error handling | типізовані доменні Error-класи → presentation: відсутність 404, відмова state-машини 409, порушення правила даних 422; <нові класи фічі> | CLAUDE.md; `<bc>/domain/errors.ts` |
-| Validation | zod лише на межі presentation; <нові поля і їх правила> | CLAUDE.md |
-| Money & precision | `Money` — цілі minor units, невід'ємний; `Balance` — знакові; коефіцієнти — scaled integer; плаваюча точка заборонена | `src/shared/` |
-| ID strategy | `randomUUID()` (v4) у application; <чи має нова сутність власний id> | CLAUDE.md |
-| Access boundary | single-user: bind 127.0.0.1 + API-key middleware (SPEC.md); 401 без деталей | SPEC.md; `app.ts` |
-| Cross-BC access | лише порти у `<споживач>/domain` + адаптери в `<споживач>/infrastructure`; напрямок <…>; зворотний порт — тільки з ADR | CLAUDE.md; ADR-NNNN |
-| Persistence & migrations | нумеровані SQL-файли; <тип міграції фічі>; upsert `ON CONFLICT (id) DO UPDATE` | `migrations/` |
-| Logging / Observability | `console`; латентність міряємо k6 smoke у CI і таймінгами supertest, трасування немає | — |
-| Rate limiting | <немає у v1 / рядок у §11> | §11 |
+| Error handling | типізовані доменні Error-класи → presentation: відсутність 404 (`ExpenseNotFoundError` — новий), відмова правила даних 422 (zod для курсу; `BaseCurrencyLockedError` — новий, порушення інваріанту AC-07 → 409, як відмова state-подібного правила) | CLAUDE.md; `expenses/domain/errors.ts`, `trips/domain/Trip.ts` |
+| Validation | zod лише на межі presentation; `rate` — додатне число з ≤ 6 знаками після коми (вхідна грануляція — закриває PRD §8 OQ #1: 6); зберігання — шкала 10⁹ | `expensesRouter.ts`; ADR-0002 |
+| Money & precision | `Money` — цілі minor units, невід'ємний; `Balance` — знакові (trip-budget ADR-0004); `Rate` — `BigInt` ×10⁹, `apply()` з округленням half-up, `ONE` для базової валюти; плаваюча точка заборонена в усьому ланцюжку від zod до БД | `src/shared/`; ADR-0002 |
+| ID strategy | `randomUUID()` (v4) у application; курс власного id не має — атрибут `Expense` (ADR-0001) | CLAUDE.md |
+| Access boundary | успадковано з trip-budget §8: bind 127.0.0.1 + API-key middleware (SPEC.md), 401 без деталей | trip-budget sad.md §8 |
+| Cross-BC access | лише порти з адаптерами в `infrastructure/`; тепер **двонапрямно**: `expenses → trips` (`TripStatusPort`, `TripBudgetPort`) і `trips → expenses` (`RatedExpensesPort`, ADR-0004); зшивання обох напрямків — тільки в `app.ts`; прямих імпортів між BC як і раніше немає | CLAUDE.md; ADR-0004 |
+| Persistence & migrations | нумеровані SQL-файли; 0004 — expand-only nullable без backfill (курс 1 похідний, ADR-0003); `BIGINT` ↔ `BigInt` через рядок у мапінгу репозиторію; upsert `ON CONFLICT (id) DO UPDATE` без змін | `migrations/`; `PostgresExpenseRepository.ts` |
+| Logging / Observability | `console`; латентність міряємо k6 smoke у CI і таймінгами supertest; трасування немає (як у trip-budget) | — |
+| Rate limiting | Немає у v1 → відкрите питання у §11 (PRD §6.1: 60/хв на правки курсу; due стадія API — разом із лімітом trip-budget) | §11 |
 | Internationalisation | N/A — повідомлення англійською, як у коді | — |
 
 ## 9. Architecture decisions
 
-<!-- arch-forge: дзеркало папки adr/ — кожен файл має рядок, кожен рядок має файл. Колонка BC — з префікса імені файлу. -->
-
 | # | BC | Title | Status | Section |
 |---|---|---|---|---|
-| NNNN | <bc> | <рішення у наказовій формі> | Accepted | §<N> |
+| 0001 | expenses | Зберігати rate snapshot nullable-колонкою на `expenses` (атрибут `Expense`), правити окремим use case без перевірки статусу поїздки | Accepted | §4 |
+| 0002 | shared | Представляти курс як `Rate` — `BigInt` ×10⁹ з округленням half-up; вхід ≤ 6 знаків | Accepted | §4, §8 |
+| 0003 | expenses | Counted expense = має ефективний курс; converted total і remaining — з однієї `BudgetBlock`; курс 1 для base currency похідний, без backfill | Accepted | §4, §5 |
+| 0004 | cross | Задавати base currency окремо від budget і блокувати її зміну через зворотний порт `RatedExpensesPort` (`trips → expenses`) | Accepted | §5, §8 |
 
-ADR files live under `docs/features/<slug>/adr/NNNN-<bc>-<title>.md`.
+ADR files live under `docs/features/multi-currency-summary/adr/NNNN-<bc>-<title>.md`.
 
-Дивись: [[adr/NNNN-<bc>-<title>]]
+Дивись: [[adr/0001-expenses-rate-snapshot-as-nullable-column-on-expenses]] · [[adr/0002-shared-rate-as-bigint-scaled-1e9-half-up]] · [[adr/0003-expenses-counted-means-has-effective-rate]] · [[adr/0004-cross-base-currency-standalone-locked-via-rated-expenses-port]]
 
 ## 10. Quality requirements
 
-<!-- arch-forge: по сценарію на кожну QG з §1. Числа — ДОСЛІВНО з PRD §6 NFR (не округлювати, не вигадувати).
-     How verify — назва тесту (`it('…')` у конкретному файлі) або k6-команда з CI, не «інтеграційний тест». -->
+**QG-1. Точність перерахунку**
+- **When:** витрата 1 000 000 minor units у валюті з курсом 0.000037 до base currency (VND-подібний випадок); окремо — випадкові пари (сума, курс) у property-тесті; окремо — курс 0.9123 на суму 1 999 minor units.
+- **Then:** перерахована сума відрізняється від точного добутку не більше ніж на 1 minor unit; для дрібної валюти результат не округлюється в нуль (PRD §6 NFR «Точність перерахунку», AC-03b); правило округлення half-up однакове для converted total і для remaining.
+- **How verify:** `src/shared/Rate.test.ts` — `it('applies a rate with at most 1 minor unit of error (half-up)')`, property-тест на випадкових BigInt; `GetTripSummary.test.ts` — `it('keeps precision for tiny-rate currencies (no rounding to zero)')`.
 
-**QG-1. <якість>**
-- **When:** <тригер з конкретними даними>
-- **Then:** <очікування з числом з PRD §6>
-- **How verify:** `<файл>.test.ts` — `it('…')`; <k6 smoke>
+**QG-2. Латентність і пропускна здатність**
+- **When:** поїздка з 300 витратами у 3 валютах, частина з курсами; owner відкриває підсумок і замінює курс на одній витраті.
+- **Then:** підсумок із converted total — p95 ≤ 250 ms; збереження/правка курсу — p95 ≤ 150 ms; ≥ 30 req/s на 1 інстанс (PRD §6 NFR, числа дослівно).
+- **How verify:** k6 smoke у CI на `GET /trips/:id/summary` і на write-ендпойнт курсу (PRD §6 «Measurement»); локально — `it('summary with converted total responds under 250 ms for 300 mixed-currency expenses')` у `expenses.http.test.ts`.
 
-**QG-2. <якість>**
-- **When:** <…>
-- **Then:** <…>
-- **How verify:** <…>
-
-**QG-3. <інваріант / ізоляція>**
-- **When:** <…>
-- **Then:** <…>
-- **How verify:** <…>
+**QG-3. Інваріанти словника у типах**
+- **When:** (а) owner замінює курс; (б) owner намагається змінити base currency поїздки з витратою, що має курс; (в) owner доставляє курс у finished поїздці; (г) підсумок перераховує витрату.
+- **Then:** (а) сума й валюта введення витрати не змінились, попередній курс ніде не збережений (AC-05); (б) відмова з поясненням правила (AC-07); (в) курс прийнято (AC-08); (г) жоден рядок `expenses` не мутований — перерахунок є значенням відповіді, не записом (Invariants).
+- **How verify:** `SetExpenseRate.test.ts` — `it('does not keep the previous rate anywhere')`, `it('replaces the rate on a stored expense even when the trip is finished')`; `SetTripBaseCurrency.test.ts` — `it('blocks changing base currency while rated expenses exist')`; `GetTripSummary.test.ts` — `it('conversion does not mutate stored expenses')`.
 
 ## 11. Risks and technical debt
 
-<!-- arch-forge: перший рядок — продуктовий ризик (з PRD §10/idea-brief devil's advocate), далі breaking changes контрактів,
-     brownfield gotchas з Explore (≥ 1), відкриті питання з edits-log (severity = «Open question», owner + due обов'язкові). -->
-
 | Risk / debt | Severity | Mitigation | Owner |
 |---|---|---|---|
-| <продуктовий ризик> | High/Medium/Low | <…> | <owner> |
-| <breaking change контракту> | Medium | <тести, стадія API> | <owner> |
-| <brownfield gotcha з Explore> | Low/Medium | <…> | <owner> |
-| Open architectural decision: <заголовок> | Open question | Resolve before <стадія/дата>; <причина> | <owner> |
+| «Сила звички»: owner не вводить курс у день витрати, total лишається неповним, а залишок бюджету — знову брехливим (продуктовий ризик, PRD §10, KPI ≥ 80% курсів у день витрати) | High | Лічильник без курсу у кожному підсумку (AC-04); правка курсу постфактум і у finished (AC-05/08); пачкове дозаповнення — PRD §8 OQ #2, після першої поїздки | я (автор) |
+| Семантика counted/uncounted змінюється відносно trip-budget (ADR-0003): словник `docs/features/trip-budget/CONTEXT.md` і її SAD §12 стають неточними | Medium | Оновити терміни через `fix-term` до реалізації; `BudgetBlock` — одна функція, тому код розійтись не може, лише документи | я (автор) |
+| Порядок реалізації: 0004 і `Rate`-логіка залежать від міграції 0003 (`trips.base_currency`) та `BudgetBlock`/`Balance` із trip-budget, які ще не написані | Medium | Реалізовувати trip-budget першою (стадія 6.7: задачі з явною залежністю); до того — converted total у поїздці без base currency повертає `null`, а не помилку | я (автор) |
+| Перший двонапрямний зв'язок між BC через порти (ADR-0004): без інструментального контролю легко зробити наступний крок — прямий імпорт | Medium | Зшивання лише в `app.ts`; eslint `import/no-restricted-paths` (борг з docs/adr/0001) — підключити разом із цією фічею | я (автор) |
+| Brownfield: у `expenses` немає шляху змінити витрату — `ExpenseRepository` без `findById`; зміна інтерфейсу тягне Postgres- та in-memory реалізації і фейки у тестах | Low | Один додатковий метод; фейки оновити разом із тестами `SetExpenseRate` | я (автор) |
+| PRD §9 обіцяв backfill курсу 1 міграцією; SAD замінив його похідним правилом (ADR-0003) — документи розходяться | Low | Back-port у PRD §9 одним рядком при наступній правці PRD; поведінка для owner ідентична | я (автор) |
+| Open architectural decision: rate-limit 60/хв на правки курсу (PRD §6.1 abuse case) | Open question | Resolve before stage 6.6 (api-forge) разом із таким самим питанням trip-budget; v1 без ліміту — єдиний клієнт owner за API-key | я (автор) |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
-- <…>
+- Курси нижче 10⁻⁹ не представні (`rate_nano > 0`) — для реальних валют недосяжно, зафіксовано у ADR-0002.
+- Історії курсів немає свідомо (PRD §3); якщо знадобиться — окрема таблиця, шлях описаний у ADR-0001 «Нейтральні».
+- Пачкове дозаповнення курсів — поки звичайна правка по одній витраті (PRD §8 OQ #2); окремий екран/фільтр — після першої поїздки з фічею.
 
 ## 12. Glossary
 
-<!-- arch-forge: лише терміни, вжиті в тілі SAD; доменні — дослівно з кореневого CONTEXT (з NOT-межею), технічні —
-     з позначкою «технічний термін» і кандидатурою у fix-term, якщо термін доменний за суттю. -->
-
 | Term | Meaning |
 |---|---|
-| <доменний термін> | <дослівно з CONTEXT + NOT-межа> |
-| <технічний термін> | Технічний термін (не з CONTEXT): <що це у коді> |
+| owner | Єдиний користувач інструмента. NOT «user»/«admin» |
+| trip (поїздка) | Облікова одиниця подорожі зі статусом planned/active/finished; носій base currency і budget |
+| expense (витрата) | Фактична витрата з сумою, валютою і датою, прив'язана до поїздки по id; з цією фічею — необов'язковий rate snapshot |
+| base currency | Валюта, у якій задається budget і рахується перевитрата; з цією фічею — задається незалежно від budget і незмінна, поки є витрати з курсом. NOT валюта введення витрати |
+| rate snapshot (курс) | Курс до base currency, зафіксований на витраті один раз для перерахунку. NOT «живий» біржовий курс |
+| converted total | Підсумок поїздки у base currency лише з витрат, що мають ефективний курс. NOT summary по валютах (сирі суми без перерахунку) |
+| counted / uncounted expense | Уточнено відносно trip-budget: counted — витрата з ефективним курсом (явний rate snapshot або base currency ⇒ 1), входить у converted total і у порівняння з budget; uncounted — без курсу. NOT невалідна витрата |
+| budget · remaining · overspend | Як у trip-budget: планова стеля; budget − Σ counted (перерахованих); сигнал, не заборона |
+| summary (підсумок) | Агрегат по категоріях і валютах + блок converted (total, withoutRate) + блок budget |
+| minor units | Копійки/центи — єдина форма зберігання й арифметики грошей |
+| Rate | Технічний термін (не з CONTEXT): value object у `shared/` — `BigInt` ×10⁹, `apply(Money)` з half-up (ADR-0002) |
+| rate_nano | Технічний термін: колонка `expenses.rate_nano BIGINT NULL` — курс ×10⁹ (ADR-0001/0002) |
+| RatedExpensesPort | Технічний термін: порт у `trips/domain` «чи має поїздка витрати з курсом», адаптер у `trips/infrastructure` (ADR-0004) |
+| BudgetBlock | Технічний термін із trip-budget: чиста функція `(base currency, budget, expenses[]) → { budget, remaining, counted, uncounted, convertedTotal, withoutRate, overspend }` — та сама форма у підсумку і у відповіді додавання витрати |
