@@ -277,22 +277,19 @@ sequenceDiagram
 
 ## 8. Crosscutting concepts
 
-<!-- 🎯 Навіщо: НАСКРІЗНІ ПАТЕРНИ, які перетинають кілька модулів: логування, помилки,    -->
-<!--           авторизація, ID strategy, outbox, кеш. ⭐ Друга найгустіша секція.          -->
-<!--           Якщо патерн всередині одного модуля — він НЕ сюди. Якщо це конвенція        -->
-<!--           проєкту в цілому — у CLAUDE.md.                                              -->
-<!-- 📋 Що писати: таблиця концепт / конвенція / де визначено. Один рядок на концепт.      -->
-<!-- 📌 Приклад: «UUID v7 (час+випадковий, сортується) у app-layer» — як default з CLAUDE.md. -->
-
 | Concept | Convention | Where defined |
 |---|---|---|
-| Logging | <e.g. structured slog, fields `module=<name>`> | <CLAUDE.md §X or here> |
-| Authentication | <e.g. JWT via session middleware> | <CLAUDE.md §X> |
-| Error handling | <e.g. domain sentinel → ports/errors.go → apperr JSON> | <CLAUDE.md §X> |
-| ID strategy | <e.g. UUID v7 in app layer> | <CLAUDE.md §X> |
-| Internationalisation | <e.g. N/A, English only> | — |
-| Observability | <e.g. OpenTelemetry on HTTP boundaries> | — |
-| Outbox / events | <module-specific patterns, if any> | <here> |
+| Error handling | Типізовані доменні помилки → мапінг у `presentation/`: відсутність → 404 (`TripNotFoundError`), відмова state-машини → 409 (`TripNotAcceptingExpensesError`), порушення правила даних → 422 (zod-валідація та новий `BudgetCurrencyMismatchError`). Overspend — **не помилка**, а поле відповіді | CLAUDE.md «Конвенції»; `src/expenses/domain/errors.ts`; тут |
+| Validation | zod лише на межі `presentation/`; сума budget — `z.number().int().positive()`, валюта — непорожній рядок (довідника валют у v1 немає, як і в `Money`) | CLAUDE.md; `expensesRouter.ts` |
+| Money & precision | `Money` — цілі мінорні одиниці, невід'ємний, `add()` тільки в одній валюті; `Balance` — знакові мінорні одиниці для remaining (ADR-0004). Плаваюча точка заборонена | `src/shared/Money.ts`; ADR-0004 |
+| ID strategy | `randomUUID()` (v4) у application-шарі; budget власного id не має — атрибут `Trip` (ADR-0001) | `AddExpense.ts`, `CreateTrip.ts` |
+| Access boundary (AC-08) | v1 single-user: сервер слухає `127.0.0.1`; middleware у `app.ts` перевіряє заголовок з `API_KEY` (уже передбачений `.env.example` і SPEC.md) і відповідає 401 без деталей — існування поїздки не розкривається. Закриває PRD §8 OQ #1 (варіант «локальний запуск + owner-ключ») | SPEC.md «Non-goals»; `.env.example`; тут |
+| Cross-BC access | Лише через порти в `expenses/domain` з адаптерами в `expenses/infrastructure`; напрямок `expenses → trips`, зворотного немає | CLAUDE.md «Dependency rule»; ADR-0002 |
+| Persistence & migrations | Нумеровані SQL-файли; 0003 — expand-only (nullable колонки + CHECK), старі рядки валідні без backfill; upsert `ON CONFLICT (id) DO UPDATE` як у наявних репозиторіях | `migrations/`; `PostgresTripRepository.ts` |
+| Logging | `console` як зараз; `LOG_LEVEL` з `.env.example` поки не читається — без змін у цій фічі | `.env.example` |
+| Rate limiting | Не вводиться у v1 → відкрите питання у §11 (PRD §8 OQ #3, due стадія 6.6) | §11 |
+| Observability | Немає (свідомо: латентність з PRD §6 міряємо k6 smoke у CI та таймінгами supertest, не трасуванням) | §10 |
+| Internationalisation | N/A — повідомлення помилок англійською, як у наявному коді | — |
 
 ## 9. Architecture decisions
 
