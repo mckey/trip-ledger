@@ -123,7 +123,7 @@ src/
 │   ├── application/GetTripSummary.ts              ~ + converted: { total: Money(base), withoutRate } | null
 │   ├── infrastructure/PostgresExpenseRepository.ts ~ мапінг rate_nano (string → BigInt), rate_set_at; findById
 │   ├── infrastructure/InMemoryExpenseRepository.ts ~ findById
-│   └── presentation/expensesRouter.ts             ~ rate у схемі додавання (додатне, ≤ 6 знаків); маршрут заміни курсу
+│   └── presentation/expensesRouter.ts             ~ rate у схемі додавання (додатне, ≤ 9 знаків); маршрут заміни курсу
 ├── trips/
 │   ├── domain/Trip.ts                             ~ + setBaseCurrency(currency, hasRatedExpenses): перше задання — завжди; зміна — лише без явних курсів, інакше BaseCurrencyLockedError; RatedExpensesPort (ADR-0004)
 │   ├── application/CreateTrip.ts                  ~ необов'язкова baseCurrency при створенні
