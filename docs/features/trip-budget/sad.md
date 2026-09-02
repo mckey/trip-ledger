@@ -306,29 +306,22 @@ ADR files live under `docs/features/trip-budget/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
-<!-- 🎯 Навіщо: ДЕРЕВО ЯКОСТЕЙ (Quality Tree) — беремо мету з §1 і розкладаємо на          -->
-<!--           конкретні листя: тести, метрики, конфіги, drill-и. ⭐ Без §10 §1 — це       -->
-<!--           маніфест. З §10 кожна декларація мапиться на щось, ЩО МОЖНА ДОВЕСТИ.        -->
-<!-- 📋 Що писати: на кожну якість з §1 — When / Then / How verify. Числа з PRD §6 NFR     -->
-<!--           ДОСЛІВНО (не округлюй p95 ≤250мс до ≤300мс — це F6-помилка критика).        -->
-<!-- 📌 Приклад: «p95 ≤500 мс на UPDATE блоку, перевіримо k6 load test 100 req/s».        -->
-
 Each top-3 goal from §1 expanded into a full scenario:
 
-**QG-1. <quality attribute>**
-- **When:** <trigger condition>
-- **Then:** <expected behavior with numbers from PRD NFR>
-- **How verify:** <test / chaos drill / load test / observability>
+**QG-1. Точність грошей**
+- **When:** budget 100 000 мінорних одиниць, три counted-витрати по 33 333; окремо — counted-витрати, що перевищують budget на 1 мінорну одиницю.
+- **Then:** remaining дорівнює рівно 1 і рівно −1 відповідно; 0 похибки округлення — арифметика лише в цілих мінорних одиницях, без плаваючої точки (PRD §6 NFR «Точність грошей»).
+- **How verify:** `src/shared/Balance.test.ts` — `it('subtracts money in minor units without rounding')`, property-тест на випадкових цілих; `GetTripSummary.test.ts` — `it('remaining equals budget minus counted expenses in minor units')`, `it('shows negative remaining as negative, not zero')` (AC-03b).
 
-**QG-2. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-2. Латентність і пропускна здатність**
+- **When:** поїздка з 300 витратами (верхня межа PRD §1: 10 на день × 30 днів), budget задано; owner відкриває підсумок і замінює budget.
+- **Then:** підсумок із блоком залишку — p95 ≤ 250 ms; задання/заміна budget — p95 ≤ 150 ms; сервіс тримає ≥ 30 req/s на 1 інстанс (PRD §6 NFR, числа дослівно).
+- **How verify:** k6 smoke у CI на `GET /trips/:id/summary` і на write-ендпойнт budget (PRD §6 «Measurement»); локально — таймінг у supertest-тесті `it('summary with budget block responds under 250 ms for 300 expenses')`.
 
-**QG-3. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-3. Ізоляція домену**
+- **When:** (а) нова витрата перевищує budget; (б) owner замінює budget за наявності витрат; (в) у `expenses` з'являється код, що імпортує `trips` напряму.
+- **Then:** (а) витрата збережена, відповідь містить overspend signal — budget ніколи не блокує (AC-04); (б) жоден рядок `expenses` не змінився, remaining перерахований від нового значення (AC-05, AC-07); (в) збірка/lint падає.
+- **How verify:** `AddExpense.test.ts` — `it('accepts an expense that exceeds the budget and returns overspend signal')`; `GetTripSummary.test.ts` — `it('replacing the budget does not touch stored expenses')`; правило імпортів — eslint `import/no-restricted-paths` (заплановано у docs/adr/0001, ще не підключене → §11), до того — code review по CLAUDE.md.
 
 ## 11. Risks and technical debt
 
