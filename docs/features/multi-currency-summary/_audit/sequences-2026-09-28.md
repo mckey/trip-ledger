@@ -32,7 +32,7 @@ Skill: `complete-sequence-diagrams` (sdlc plugin v4.5.1). Size: S (frontmatter P
 | AC-08 finished не блокує | Covered | flow 3, `Note` «статус поїздки НЕ перевіряється» |
 | AC-09 залишок бюджету лікується | Covered | flow 2, `Note` про спільну `BudgetBlock` |
 
-Разом: 6/6 US, 11/11 AC (9 Covered, 2 Trivial, 0 Missing) — нових flows не додано.
+Разом: 6/6 US, 10/10 AC (9 Covered, 1 Trivial, 0 Missing) — нових flows не додано.
 
 ## Edits-log
 

@@ -57,7 +57,9 @@ erDiagram
 
 **Aggregate root:** root. Budget — атрибут поїздки без власного життєвого циклу (ADR-0001), окремої таблиці немає.
 **Access patterns:** читання/запис по `id` (flow 1 «знайти поїздку», «зберегти поїздку (upsert)»; `TripBudgetPort` у flows 2, 3) → PK.
-**Constraints:** нових немає. `updated_at` свідомо не додано: заміна budget перезаписує значення без журналу (PRD §3, AC-07), вимоги «коли змінено» у PRD немає.
+**Constraints:** нових немає — course default забороняє CHECK, тож обидва CHECK з Accepted ADR-0001 (`budget_minor > 0`, парність budget/base currency) тут не згенеровані (розходження — в аудиті). `updated_at` свідомо не додано: заміна budget перезаписує значення без журналу (PRD §3, AC-07), вимоги «коли змінено» у PRD немає.
+
+> **Back-port (2026-09-28, прогін schema-forge на multi-currency-summary):** CHECK-и бюджету повернуто в дозволеній формі staged-міграцією `docs/features/multi-currency-summary/migrations/20260928140100000_add_budget_checks_to_trips.sql` — `budget_minor >= 0` (дзеркало `Money`) і `budget_minor IS NULL OR base_currency IS NOT NULL` (ADR-0004 multi-currency-summary). Промотувати її **одним деплоєм** з `20260928120000_add_budget_to_trips`, щоб колонки не жили в проді без CHECK. Рішення щодо `> 0` — Amendment у [ADR-0001](./adr/0001-budget-as-columns-on-trips.md).
 
 ### `expenses` (aggregate root — BC expenses)
 
@@ -79,13 +81,17 @@ erDiagram
 
 Три staged-міграції = три PR = три деплої:
 
-| Крок | Міграція | Код у тому ж PR | Порядок деплою |
-|---|---|---|---|
-| 1 expand | `20260928120100_add_currency_code_to_expenses` — `ADD currency_code NULL`, `currency DROP NOT NULL` | `PostgresExpenseRepository.save` пише обидві колонки (`currency` як ввели, `currency_code` нормалізовано); читає `currency` | міграція → код |
-| 2 backfill | `20260928120200_backfill_currency_code_in_expenses` — UUID-курсор, батч 1000, [супутник](./backfill-currency-code.md) | читання переходить на `currency_code`; запис — обидві | міграція → код |
-| 3 contract | `20260928120300_contract_currency_on_expenses` — `currency_code SET NOT NULL`, `DROP currency` | запис лише `currency_code`; `ExpenseRow` без `currency` | **код → міграція** (post-deploy) |
+| Крок | Міграція | Код у тому ж PR | Порядок деплою | Відкат |
+|---|---|---|---|---|
+| 1 expand | `20260928120100_add_currency_code_to_expenses` — `ADD currency_code NULL`, `currency DROP NOT NULL` | `PostgresExpenseRepository.save` пише обидві колонки (`currency` як ввели, `currency_code` нормалізовано); читає `currency` | міграція → код | код → down |
+| 2 backfill | `20260928120200_backfill_currency_code_in_expenses` — UUID-курсор, батч 1000, [супутник](./backfill-currency-code.md) | читання `COALESCE(currency_code, currency)`; запис — обидві | міграція → код | код кроку 1 → down (down обнуляє `currency_code`, який код кроку 2 читає першим) |
+| 3 contract | `20260928120300_contract_currency_on_expenses` — `currency_code SET NOT NULL`, `DROP currency` | запис і читання лише `currency_code`; `ExpenseRow` без `currency` | **код → міграція** (post-deploy); передумова — 0 рядків з `currency_code IS NULL` | down → код кроку 2 |
 
 `currency DROP NOT NULL` стоїть уже в кроці 1: код кроку 3 перестає писати `currency` до того, як міграція її видалить, і NOT NULL на старій колонці зламав би вставки у проміжку між деплоєм і міграцією.
+
+Читання на кроці 2 — через `COALESCE`, а не одразу `currency_code`: backfill свідомо лишає `NULL` там, де валюту не вгадати (`'грн'`), і до ручного виправлення такі рядки інакше читались би як `Money(amount, null)`.
+
+**[DECISION] Нормалізація vs інваріант CONTEXT «витрата завжди зберігає суму й валюту введення».** Трактую `' uah '` → `UAH` як зміну написання коду, а не валюти, тож інваріант не порушено. Ціна рішення: після кроку 3 сире написання втрачено назавжди (down кроку 3 повертає канонічну форму). Перевірка `^[A-Z]{3}$` — правило застосунку з SAD §8, не повний довідник ISO 4217: `'abc'` стане `ABC`. Перед запуском backfill переглянути `SELECT DISTINCT currency FROM expenses`. Кандидат у NOT-межу інваріанта через `fix-term`.
 
 ## Indexes
 

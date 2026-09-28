@@ -20,7 +20,7 @@ runner: "node-pg-migrate 8.0.4"
 
 | ADR | Що каже | Правило | Рішення |
 |---|---|---|---|
-| mcs 0001 / 0002 | `rate_nano BIGINT NULL CHECK (rate_nano > 0)` | CHECK дозволений, якщо він дзеркалить інваріант VO з `shared/`; `BIGINT` — лише з ADR | **Keep ADR** — `Rate` > 0 є інваріантом `shared/Rate`, а `BIGINT` задає сам ADR-0002 |
+| mcs 0001 / 0002 | `rate_nano BIGINT NULL CHECK (rate_nano > 0)` | CHECK дозволений, якщо він дзеркалить інваріант VO з `shared/`; `BIGINT` — лише з ADR | **Keep ADR** — `Rate` > 0 є інваріантом value object-а `Rate`, який ADR-0002 кладе в `shared/` (файлу ще немає — з'явиться при реалізації), а `BIGINT` задає сам ADR-0002 |
 | mcs 0004 (cross) | `trips`: `CHECK (budget_minor IS NULL OR base_currency IS NOT NULL)` | форма складеного атрибута — дозволено | **Keep ADR** — budget без валюти не є `Money`; base currency без budget дозволена (сама суть ADR-0004) |
 | trip-budget 0001 | `CHECK (budget_minor > 0)` як «друга лінія захисту» | продуктові пороги заборонені; `Money` ≥ 0 дозволений | **Amend ADR** — у БД `budget_minor >= 0` (дзеркало `Money`), `> 0` лишається в `Trip.setBudget()` і zod (AC-02). Back-port у trip-budget ADR-0001 / SAD §5 |
 | — (правило скіла) | `rate_nano` і `rate_set_at` заповнюються лише разом | форма складеного атрибута | Додано `expenses_rate_snapshot_pair_chk`; в ADR цього немає, але й суперечності з ним немає |
@@ -76,7 +76,7 @@ erDiagram
 
 | Constraint | Вираз | Клас | Дзеркало чого | Проба (має впасти) |
 |---|---|---|---|---|
-| `expenses_rate_nano_positive_chk` | `rate_nano > 0` | (а) | `shared/Rate`: курс додатний (ADR-0002) | `rate_nano = 0`, `rate_nano = -912300000` |
+| `expenses_rate_nano_positive_chk` | `rate_nano > 0` | (а) | `Rate` у `shared/` (запланований ADR-0002): курс додатний | `rate_nano = 0`, `rate_nano = -912300000` |
 | `expenses_rate_snapshot_pair_chk` | `(rate_nano IS NULL) = (rate_set_at IS NULL)` | (б) | rate snapshot = курс + час задання | курс без часу; час без курсу |
 | `trips_budget_has_currency_chk` | `budget_minor IS NULL OR base_currency IS NOT NULL` | (б) | budget = `Money` (сума + валюта), ADR-0004 | `budget_minor = 100000` без валюти |
 | `trips_budget_minor_nonneg_chk` | `budget_minor >= 0` | (а) | `shared/Money`: невід'ємні minor units | `budget_minor = -1` |
@@ -118,6 +118,8 @@ Real drift: немає — поточний код 1:1 з живими `0001`/`0
 4. `trip-budget/…120100` → `…120200` → `…120300` — окремими PR. До коду кроку 2 `BudgetBlock` порівнює валюти по `currency`, після — по `currency_code`.
 
 Під правилами schema-forge staged-пари trip-budget (golang-migrate) при промоції переписуються в один `.sql` node-pg-migrate на кожну пару; backfill з `COMMIT` у `DO` — у `.js` з `pgm.noTransaction()`, бо в `.sql` раннер тримає транзакцію.
+
+**Перештампування префікса обов'язкове, а не косметичне.** node-pg-migrate 8 розбирає як час лише 13- (epoch ms) або 17-значні (utc) префікси. 14-значний префікс golang-migrate (`20260928120000`) він бере як число ≈ 2.03·10¹³, і воно сортується **після** будь-якого 17-значного (≈ 1.79·10¹² мс). Якщо промотувати пари trip-budget без перештампування, `…140100000` (CHECK на `budget_minor`) піде раніше за `…120000` (створює колонку) і впаде. При промоції всі файли отримують 17-значний utc-префікс у порядку з цього списку.
 
 ## Roundtrip
 

@@ -11,7 +11,7 @@ Skill: `generate-data-model` (sdlc plugin v4.5.1), `--mode brownfield`. Size: S.
   - `20260928120100_add_currency_code_to_expenses.{up,down}.sql` — breaking 1/3 expand
   - `20260928120200_backfill_currency_code_in_expenses.{up,down}.sql` — breaking 2/3 backfill
   - `20260928120300_contract_currency_on_expenses.{up,down}.sql` — breaking 3/3 contract
-- `.claude/rules/migrations.md` — **bootstrapped** з `templates/rules-migrations-baseline.md` (файлу не було). Правити, якщо команда не згодна з дефолтом.
+- `.claude/rules/migrations.md` — **bootstrapped** з `templates/rules-migrations-baseline.md` (файлу не було). Правити, якщо команда не згодна з дефолтом. *Superseded 2026-09-28 (`e4355dd`): замінено baseline-ом schema-forge під час прогону на multi-currency-summary.*
 
 Міграції **staged** — у живе дерево `migrations/` нічого не записано; `implement-tasks` промотує їх, перештампувавши timestamp у момент промоції.
 
@@ -20,7 +20,7 @@ Skill: `generate-data-model` (sdlc plugin v4.5.1), `--mode brownfield`. Size: S.
 | Тема | Репо зараз | Застосовано | Що вирішити |
 |---|---|---|---|
 | Імена міграцій | послідовні `0001_`, `0002_`, один файл без down | timestamp-пари `.up.sql` / `.down.sql` | змішування форматів у живому `migrations/` при промоції |
-| Раннер | `Makefile`: `npx node-pg-migrate up`, пакета в `package.json` немає | golang-migrate (дефолт скіла, roundtrip через `migrate/migrate:v4.18.3`) | node-pg-migrate не читає пари `.up/.down` — при промоції або міняти раннер, або конвертувати файли |
+| Раннер | `Makefile`: `npx node-pg-migrate up`, пакета в `package.json` на момент прогону немає (додано в `bbc1e45`) | golang-migrate (дефолт скіла, roundtrip через `migrate/migrate:v4.18.3`) | node-pg-migrate не читає пари `.up/.down` — при промоції або міняти раннер, або конвертувати файли |
 | `CHECK` | 0001/0002 мають CHECK на enum, `>= 0`, `ends_at >= starts_at` | нових CHECK немає | **конфлікт з Accepted ADR-0001**: там CHECK `budget_minor > 0` і парність budget/base currency обрані свідомо як «друга лінія захисту». Скіл застосовує дефолт і лише фіксує розходження — ADR-0001 треба або поправити, або повернути CHECK руками |
 | Рядки | `TEXT` скрізь | `VARCHAR(3)` для `base_currency`, `currency_code` | — |
 | PK | `TEXT` + UUID v4 з `randomUUID()` | нових таблиць немає, не чіпаємо | UUID v7 / тип `UUID` — окремим рішенням |
@@ -57,10 +57,11 @@ Skill: `generate-data-model` (sdlc plugin v4.5.1), `--mode brownfield`. Size: S.
 `scripts/db-roundtrip.sh docs/features/trip-budget/migrations`:
 
 ```
-migrate up        4/u applied
-migrate down -all 4/d applied
-migrate up        4/u applied → version 20260928120300
+migrate up        4/u applied   runner table: 4 applied
+migrate down -all 4/d applied   runner table: 0 applied
+migrate up        4/u applied   runner table: 4 applied (version 20260928120300)
 OK  down == baseline (columns, types, nullability, defaults, constraints, indexes)
+OK  down keeps every baseline row (PK set)
 OK  up#2 == up#1 (pg_dump -s, byte-for-byte)
 OK  data after up#2 == after up#1
 ROUNDTRIP OK

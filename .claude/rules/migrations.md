@@ -5,12 +5,12 @@
 ## Раннер
 
 - **node-pg-migrate** (`devDependencies`, `make migrate`). Живе дерево — `migrations/`.
-- Legacy `0001_*.sql`, `0002_*.sql` без маркерів раннер читає як up-only — не переписувати.
+- Legacy `0001_*.sql`, `0002_*.sql` без маркерів раннер читає як up-only — не переписувати. На кожному запуску він пише для них `Can't determine timestamp` як error — це шум, не падіння.
 - `--single-transaction` за замовчуванням: усі pending-файли — одна транзакція.
 
 ## Файли
 
-- Нові: `<YYYYMMDDhhmmssSSS>_<verb>_<entity>.sql` — одна зміна = один файл з секціями `-- Up Migration` / `-- Down Migration`.
+- Нові: `<YYYYMMDDhhmmssSSS>_<verb>_<entity>.sql` — одна зміна = один файл з секціями `-- Up Migration` / `-- Down Migration`. Створювати: `npx node-pg-migrate create <name> -j sql --migration-filename-format utc` (без прапорця — 13-значний epoch ms).
 - Поза транзакцією (`CREATE INDEX CONCURRENTLY`, батчевий backfill з `COMMIT`) — `.js` з `pgm.noTransaction()`, один оператор на файл.
 - Staged-файли фічі живуть у `docs/features/<slug>/migrations/` до промоції; у `migrations/` їх переносить implement, перештамповуючи префікс.
 

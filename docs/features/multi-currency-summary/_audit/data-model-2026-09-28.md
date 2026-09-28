@@ -50,15 +50,18 @@ Skill: `schema-forge` (`.claude/skills/schema-forge`, форк `sdlc:generate-da
 
 ```
 runner: node-pg-migrate, staged: 2, baseline: 0001 + 0002 + seed + trip-budget up (4)
-migrate up            2 UP
-probes                6/6 rejected (rate_nano_positive ×2, rate_snapshot_pair ×2, budget_has_currency, budget_minor_nonneg)
-migrate down          2 DOWN
-migrate up (again)    2 UP
+migrate up            2 UP     runner table: 2 applied
+probes                6/6 rejected, кожна саме своїм CHECK (`-- expect:`): rate_nano_positive ×2, rate_snapshot_pair ×2, budget_has_currency, budget_minor_nonneg
+migrate down          2 DOWN   runner table: 0 applied
+migrate up (again)    2 UP     runner table: 2 applied
 OK  down == baseline (columns, types, nullability, defaults, constraints, indexes)
+OK  down keeps every baseline row (PK set)
 OK  up#2 == up#1 (pg_dump -s, byte-for-byte)
 OK  data after up#2 == after up#1
 ROUNDTRIP OK
 ```
+
+Перевірка самого скрипта після ревʼю (критик знайшов, що `… | grep || true` глушив exit code node-pg-migrate): зламана staged-міграція → `FAIL node-pg-migrate up`, exit 1; проба з помилкою в SQL → `FAIL wrong error`, а не «rejected»; `.js`-передумова в `--after` застосовується самим раннером.
 
 Позитивна перевірка (в транзакції з ROLLBACK): курс з часом, budget з валютою, base currency без budget — приймаються.
 

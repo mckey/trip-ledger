@@ -1,22 +1,13 @@
 ---
 name: schema-forge
 description: >
-  Мій форк sdlc:generate-data-model під власну практику: data-model.md + staged
-  SQL-міграції у форматі раннера, який реально стоїть у репо (у trip-ledger —
-  node-pg-migrate: один .sql з `-- Up Migration` / `-- Down Migration`), +
-  виконуваний roundtrip up → down → up на одноразовому Postgres з docker compose.
-  Відмінності: раннер і його транзакційна модель визначаються з репо; CHECK
-  дозволений лише як дзеркало інваріанта value object-а з shared/ або форми
-  складеного атрибута (Money = *_minor + валюта), enum/бізнес-CHECK, TRIGGER і
-  business DEFAULT заборонені з посиланням на CLAUDE.md; Accepted ADR перемагає
-  дефолт скіла (конфлікт — питання, не мовчазна заміна); expand → backfill →
-  contract з кроком «послабити стару колонку» і порядком деплою для кожного PR;
-  індекс = запит + оцінка рядків; drift по TS-класах domain з поділом на
-  expected-staged / real; вхід — arch-forge SAD (§5 «Дельта міграцій», ADR
-  NNNN-<bc>-*) замість §6.4 ER. Тригери: «schema-forge <slug>», «модель даних
-  для <slug>», «міграції для <slug>», «/schema-forge <slug>». Пише
-  docs/features/<slug>/data-model.md + staged docs/features/<slug>/migrations/ +
-  _audit/. Standalone: не залежить від SDLC-плагіна курсу.
+  Мій форк sdlc:generate-data-model: data-model.md + staged SQL-міграції у
+  форматі раннера з репо (trip-ledger — node-pg-migrate, один .sql з up/down
+  секціями) + виконуваний roundtrip up → down → up на Postgres з docker compose.
+  CHECK лише як дзеркало інваріанта VO з shared/ або форма складеного атрибута;
+  Accepted ADR важливіший за дефолти. Тригери: «schema-forge <slug>», «модель
+  даних для <slug>», «міграції для <slug>», «/schema-forge <slug>». Пише
+  docs/features/<slug>/data-model.md, staged migrations/ і _audit/. Standalone.
 ---
 
 # Skill: schema-forge — модель даних і міграції під мою практику
@@ -54,7 +45,7 @@ description: >
 
 **Hard required** (без них — стоп із вказівкою, що бракує):
 
-- `<slug>`; `docs/features/<slug>/PRD.md` (§4 US, §5 AC, §9 Migration impact); `docs/features/<slug>/sad.md` (§5 дельти, §6 flows, §7 обсяг, §8 Persistence) + `adr/`.
+- `<slug>`; `docs/features/<slug>/PRD.md` (§4 US, §5 AC; §9 Migration impact — якщо є, у PRD до prd-forge його немає); `docs/features/<slug>/sad.md` (§5 дельти, §6 flows, §7 обсяг, §8 Persistence) + `adr/`.
 - Кореневий `CONTEXT.md` (Glossary + Invariants), `CLAUDE.md` (правило «бізнес-логіка не в інфраструктурі»).
 - `docker` з compose — без нього п. 8 не виконати, і скіл так і пише в аудиті, а не мовчки пропускає.
 
@@ -65,7 +56,7 @@ description: >
 | Тема | Default | Чому |
 |---|---|---|
 | Раннер і формат | з репо (`Makefile`, `package.json`); у trip-ledger — node-pg-migrate, `.sql` з up/down-секціями | Один формат у живому `migrations/`, без конвертації при промоції |
-| Ім'я файлу | `<YYYYMMDDhhmmssSSS>_<verb>_<entity>.sql` (utc-префікс node-pg-migrate) | Раннер сортує за префіксом; гілки не колізять |
+| Ім'я файлу | `<YYYYMMDDhhmmssSSS>_<verb>_<entity>.sql` — `node-pg-migrate create <name> -j sql --migration-filename-format utc` (без прапорця раннер дає 13-значний epoch ms) | Раннер сортує за префіксом; гілки не колізять |
 | Транзакції | `.sql` = у транзакції раннера; `CONCURRENTLY` / батчі з `COMMIT` → `.js` + `pgm.noTransaction()` | `--single-transaction` за замовчуванням |
 | Ідемпотентність DDL | `IF NOT EXISTS` / `IF EXISTS`; для constraint — `DROP CONSTRAINT IF EXISTS` у down | Повтор частково застосованого файлу не падає |
 | PK | brownfield-таблиці — як є (`TEXT` + `randomUUID()`); нові — `UUID`, значення з застосунку | Не міняю тип PK без окремого ADR |
@@ -82,8 +73,8 @@ description: >
 
 1. **Prereq check (hard).** Файли з Inputs є; `docker compose version` працює. Розмір — з `feature_size` PRD.
 2. **Rules bootstrap / звірка.** Немає `.claude/rules/migrations.md` → копія [`./templates/rules-migrations-baseline.md`](./templates/rules-migrations-baseline.md), повідомити. Є, але з маркером `Bootstrapped by sdlc/plugin/skills/generate-data-model` → показати різницю з моїм baseline і спитати `Replace / Merge / Keep`; вже staged-файли інших фіч перелічити в аудиті як «згенеровані під старі правила».
-3. **Визначити раннер.** `Makefile` → `package.json` (devDependencies) → формат наявних `migrations/*`. Записати: раннер, версія, транзакційна модель, як він читає legacy-файли (node-pg-migrate трактує `.sql` без маркерів як up-only).
-4. **Mermaid-gate на §6.** `mermaid.parse()` кожного блоку `sad.md`. Падає → стоп і вказівка на `complete-sequence-diagrams`; data-model з непарсованих flows не будується.
+3. **Визначити раннер.** `Makefile` → `package.json` (devDependencies) → формат наявних `migrations/*`. Записати: раннер, версія, транзакційна модель, як він читає legacy-файли (node-pg-migrate трактує `.sql` без маркерів як up-only і на кожному запуску пише `Can't determine timestamp for 0001` як error — це шум, не падіння; прибирається лише перейменуванням legacy, чого не робимо).
+4. **Mermaid-gate на §6.** `mermaid.parse()` кожного блоку `sad.md`: `npx -y @mermaid-js/mermaid-cli -i docs/features/<slug>/sad.md -o <tmp>.md` (exit ≠ 0 = зламаний блок), або без Chromium — `node ./templates/mmd-extract.mjs docs/features/<slug>/sad.md > check.js` і виконати `check.js` у DevTools будь-якої https-сторінки (імпортує `mermaid@11` з jsDelivr, друкує OK/FAIL по блоках). Падає → стоп і вказівка на `complete-sequence-diagrams`; data-model з непарсованих flows не будується.
 5. **Прочитати джерела в порядку пріоритету:** Accepted ADR (схемні рішення — обов'язкові) → SAD §5 «Дельта міграцій» → PRD §4/§5/§9 → §6 persist/read-кроки → §7 обсяг → CONTEXT Invariants → живі `migrations/` (offline-парс) → staged сусідніх фіч.
 6. **Конфлікти ADR ↔ rules** (п. 4 відмінностей). Кожен — питання з рекомендацією; рішення записати в `data-model.md` §«Рішення».
 7. **Агрегати і колонки** за Defaults; для кожної колонки — «Джерело» (AC / ADR / SAD §). `updated_at` не додається мовчки ніколи.
@@ -122,4 +113,5 @@ description: >
 - [`./templates/rules-migrations-baseline.md`](./templates/rules-migrations-baseline.md) — мій baseline `.claude/rules/migrations.md`.
 - [`./templates/migration.sql`](./templates/migration.sql) — node-pg-migrate SQL-міграція (у транзакції раннера).
 - [`./templates/migration-notx.js`](./templates/migration-notx.js) — node-pg-migrate JS-міграція поза транзакцією (`CONCURRENTLY`, батчевий backfill).
-- [`./templates/db-roundtrip.sh`](./templates/db-roundtrip.sh) — roundtrip-скрипт для репо, де його ще немає.
+- [`./templates/db-roundtrip.sh`](./templates/db-roundtrip.sh) — roundtrip-скрипт для репо, де його ще немає; блоки `REPO-SPECIFIC` (креденшели, ім'я compose-проєкту, сид, `data()` / `ids()`) переписати під репо.
+- [`./templates/mmd-extract.mjs`](./templates/mmd-extract.mjs) — Mermaid-gate без mermaid-cli: витягає блоки з `.md` у готовий до DevTools `mermaid.parse()`-скрипт.

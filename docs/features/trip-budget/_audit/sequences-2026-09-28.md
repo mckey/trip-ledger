@@ -34,7 +34,7 @@ Skill: `complete-sequence-diagrams` (sdlc plugin v4.5.1). Size: S (з frontmatte
 | AC-08 authorization | **Missing → drawn** | новий `### Cross-cutting: межа доступу до budget і підсумку (AC-08)` |
 | AC-09 finished не заважає | Covered | flow 1, гілка «поїздка є (будь-який статус)» |
 
-Разом: 6/6 US, 11/11 AC (9 Covered, 2 Trivial, 1 Missing → дописано).
+Разом: 6/6 US, 11/11 AC (8 Covered, 2 Trivial, 1 Missing → дописано).
 
 ## Рішення по Missing
 
