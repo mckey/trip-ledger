@@ -1,0 +1,2 @@
+ALTER TABLE trips DROP COLUMN IF EXISTS base_currency;
+ALTER TABLE trips DROP COLUMN IF EXISTS budget_minor;
