@@ -17,7 +17,7 @@ for (const file of process.argv.slice(2)) {
     const line = text.slice(0, m.index).split('\n').length;
     blocks.push({ file, i: i++, line, src });
   }
-  const fences = (text.match(/```mermaid/g) || []).length;
+  const fences = (text.match(/^[ \t]*```mermaid/gm) || []).length; // лише огорожі на початку рядка, не згадки в тексті
   if (fences !== i) {
     console.error(`${file}: ${fences} \`\`\`mermaid fences, extracted ${i} — check the unmatched ones by hand`);
     process.exitCode = 1;
