@@ -7,13 +7,22 @@ import { readFileSync } from 'node:fs';
 const blocks = [];
 for (const file of process.argv.slice(2)) {
   const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-  const re = /```mermaid\n([\s\S]*?)```/g;
+  // Огорожа може бути з відступом (блок усередині пункту списку) — такий блок теж має пройти gate.
+  const re = /^([ \t]*)```mermaid[ \t]*\n([\s\S]*?)^[ \t]*```/gm;
   let m;
   let i = 0;
   while ((m = re.exec(text))) {
+    const indent = m[1].length;
+    const src = m[2].split('\n').map((l) => l.slice(Math.min(indent, l.length - l.trimStart().length))).join('\n');
     const line = text.slice(0, m.index).split('\n').length;
-    blocks.push({ file, i: i++, line, src: m[1] });
+    blocks.push({ file, i: i++, line, src });
   }
+  const fences = (text.match(/```mermaid/g) || []).length;
+  if (fences !== i) {
+    console.error(`${file}: ${fences} \`\`\`mermaid fences, extracted ${i} — check the unmatched ones by hand`);
+    process.exitCode = 1;
+  }
+  console.error(`${file}: ${i} mermaid block(s)`);
 }
 if (blocks.length === 0) {
   console.error('no ```mermaid blocks found');

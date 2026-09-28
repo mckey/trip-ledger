@@ -21,7 +21,7 @@ Skill: `generate-data-model` (sdlc plugin v4.5.1), `--mode brownfield`. Size: S.
 |---|---|---|---|
 | Імена міграцій | послідовні `0001_`, `0002_`, один файл без down | timestamp-пари `.up.sql` / `.down.sql` | змішування форматів у живому `migrations/` при промоції |
 | Раннер | `Makefile`: `npx node-pg-migrate up`, пакета в `package.json` на момент прогону немає (додано в `bbc1e45`) | golang-migrate (дефолт скіла, roundtrip через `migrate/migrate:v4.18.3`) | node-pg-migrate не читає пари `.up/.down` — при промоції або міняти раннер, або конвертувати файли |
-| `CHECK` | 0001/0002 мають CHECK на enum, `>= 0`, `ends_at >= starts_at` | нових CHECK немає | **конфлікт з Accepted ADR-0001**: там CHECK `budget_minor > 0` і парність budget/base currency обрані свідомо як «друга лінія захисту». Скіл застосовує дефолт і лише фіксує розходження — ADR-0001 треба або поправити, або повернути CHECK руками |
+| `CHECK` | 0001/0002 мають CHECK на enum, `>= 0`, `ends_at >= starts_at` | нових CHECK немає | **конфлікт з Accepted ADR-0001**: там CHECK `budget_minor > 0` і парність budget/base currency обрані свідомо як «друга лінія захисту». Скіл застосовує дефолт і лише фіксує розходження — ADR-0001 треба або поправити, або повернути CHECK руками. *Закрито 2026-09-28: Amendment в ADR-0001 + CHECK-и в `multi-currency-summary/migrations/20260928140100000_add_budget_checks_to_trips.sql`.* |
 | Рядки | `TEXT` скрізь | `VARCHAR(3)` для `base_currency`, `currency_code` | — |
 | PK | `TEXT` + UUID v4 з `randomUUID()` | нових таблиць немає, не чіпаємо | UUID v7 / тип `UUID` — окремим рішенням |
 | Audit-колонки | `created_at` немає в жодній таблиці | не додано (PRD не вимагає, нових таблиць немає) | борг відносно course default |

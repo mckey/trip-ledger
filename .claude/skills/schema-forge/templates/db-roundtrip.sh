@@ -70,43 +70,41 @@ applied() { # скільки staged-файлів раннер вважає за�
     # golang-migrate тримає один рядок: поточну версію і dirty. Застосовано все == версія останнього файлу, не dirty.
     local v last
     v="$(psql_db -At -c "SELECT CASE WHEN to_regclass('schema_migrations') IS NULL THEN '' ELSE (SELECT coalesce(max(version)::text, '') || CASE WHEN bool_or(dirty) THEN ' dirty' ELSE '' END FROM schema_migrations) END;")"
-    last="$(find "$STAGED_ABS" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sort | tail -1 | cut -d_ -f1)"
+    last="$(find "$STAGED_ABS" -maxdepth 1 -name '*.up.sql' | sed 's#.*/##' | sort | tail -1 | cut -d_ -f1)"
     if [ -z "$v" ]; then echo 0; elif [ "$v" = "$last" ]; then echo "$N_FILES"; else echo "version:$v"; fi
   else
     psql_db -At -c "SELECT CASE WHEN to_regclass('pgmigrations') IS NULL THEN 0 ELSE (SELECT count(*) FROM pgmigrations) END;"
   fi
 }
 expect_applied() { local got; got="$(applied)"; [ "$got" = "$1" ] || { echo "FAIL runner applied $got file(s), expected $1"; exit 1; }; echo "runner table: $got applied"; }
-up_section() { # up-частина staged-файлу для psql (формат golang-migrate або node-pg-migrate .sql)
-  case "$1" in
-    *.up.sql) cat "$1" ;;
-    *.sql) awk 'BEGIN{p=1} { l=tolower($0) } l ~ /^[[:space:]]*--[[:space:]-]*up[[:space:]]+migration/ {p=1; next} l ~ /^[[:space:]]*--[[:space:]-]*down[[:space:]]+migration/ {p=0} p' "$1" ;;
-  esac
-}
-apply_prerequisite() { # <dir>: golang-пари — psql по up-файлах; формат node-pg-migrate (.sql/.js) — самим раннером
+PREREQ_N=0
+apply_prerequisite() { # <dir>: golang-пари — psql по *.up.sql; формат node-pg-migrate (.sql/.js) — самим раннером
   local d; d="$(abs "$1")"
   if ls "$d"/*.up.sql >/dev/null 2>&1; then
     for f in $(find "$d" -maxdepth 1 -type f -name '*.up.sql' | sort); do
-      echo "apply (prerequisite) $1/$(basename "$f")"; up_section "$f" | psql_db
+      echo "apply (prerequisite) $1/$(basename "$f")"; psql_db < "$f"
     done
   else
-    echo "apply (prerequisite, node-pg-migrate) $1"; node_migrate "$d" pgmigrations_prereq up "prereq-$(basename "$(dirname "$d")")"
+    # окрема таблиця раннера на кожну теку: зі спільною checkOrder node-pg-migrate падає на другій теці
+    PREREQ_N=$((PREREQ_N + 1))
+    echo "apply (prerequisite, node-pg-migrate) $1"; node_migrate "$d" "pgmigrations_prereq_$PREREQ_N" up "prereq-$PREREQ_N"
   fi
 }
-SERVICE_TABLES="'schema_migrations', 'pgmigrations', 'pgmigrations_prereq'"
+# службові таблиці раннерів: schema_migrations (golang-migrate), pgmigrations* (node-pg-migrate, зокрема prereq_N)
+svc() { echo "$1 <> 'schema_migrations' AND $1 NOT LIKE 'pgmigrations%'"; }
 catalog() {
   psql_db -At -c "
     SELECT 'col|' || table_name || '|' || column_name || '|' || data_type || '|' ||
            coalesce(character_maximum_length::text, '-') || '|' || is_nullable || '|' || coalesce(column_default, '-')
       FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name NOT IN ($SERVICE_TABLES)
+     WHERE table_schema = 'public' AND $(svc table_name)
     UNION ALL
     SELECT 'con|' || conrelid::regclass || '|' || conname || '|' || pg_get_constraintdef(oid)
       FROM pg_constraint
-     WHERE connamespace = 'public'::regnamespace AND conrelid::regclass::text NOT IN ($SERVICE_TABLES)
+     WHERE connamespace = 'public'::regnamespace AND $(svc conrelid::regclass::text)
     UNION ALL
     SELECT 'idx|' || indexname || '|' || indexdef
-      FROM pg_indexes WHERE schemaname = 'public' AND tablename NOT IN ($SERVICE_TABLES)
+      FROM pg_indexes WHERE schemaname = 'public' AND $(svc tablename)
     ORDER BY 1;"
 }
 dump() {
@@ -152,13 +150,14 @@ if [ -n "$PROBES" ]; then
     n_probes=$((n_probes + 1))
     if err="$(printf 'BEGIN;\n%s\nROLLBACK;\n' "$stmt" | psql_db 2>&1)"; then
       echo "FAIL accepted: $stmt"; touch "$OUT/probe-failed"
-    elif ! echo "$err" | grep -q "violates check constraint \"${expect}"; then
+    elif ! echo "$err" | grep -q "violates check constraint \"${expect}${expect:+\"}"; then
       echo "FAIL wrong error (expected CHECK ${expect:-any}): $stmt"; echo "     $err" | head -2; touch "$OUT/probe-failed"
     else
       echo "OK   rejected by $(echo "$err" | grep -m1 -o 'check constraint "[^"]*"'): $stmt"
     fi
   done < "$(cd "$ROOT" && realpath "$PROBES")"
   echo "probes: $n_probes"
+  [ "$n_probes" -gt 0 ] || { echo "FAIL --probes file has no statements"; touch "$OUT/probe-failed"; }
 fi
 
 step "migrate down (all staged)"

@@ -114,7 +114,7 @@ Real drift: немає — поточний код 1:1 з живими `0001`/`0
 
 1. `trip-budget/20260928120000_add_budget_to_trips` — колонки `budget_minor`, `base_currency`, на які посилаються CHECK-и цієї фічі.
 2. `multi-currency-summary/20260928140000000_add_rate_snapshot_to_expenses` — незалежна від ланцюжка `currency_code`, може йти будь-коли після п. 1.
-3. `multi-currency-summary/20260928140100000_add_budget_checks_to_trips` — після п. 1.
+3. `multi-currency-summary/20260928140100000_add_budget_checks_to_trips` — одним деплоєм з п. 1, щоб колонки budget не жили в проді без CHECK (Amendment ADR-0001 trip-budget).
 4. `trip-budget/…120100` → `…120200` → `…120300` — окремими PR. До коду кроку 2 `BudgetBlock` порівнює валюти по `currency`, після — по `currency_code`.
 
 Під правилами schema-forge staged-пари trip-budget (golang-migrate) при промоції переписуються в один `.sql` node-pg-migrate на кожну пару; backfill з `COMMIT` у `DO` — у `.js` з `pgm.noTransaction()`, бо в `.sql` раннер тримає транзакцію.

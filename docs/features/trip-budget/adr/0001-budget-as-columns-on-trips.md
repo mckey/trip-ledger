@@ -2,7 +2,7 @@
 status: Accepted
 owner: "Vladimir Makarov"
 reviewers: []
-updated_at: "2026-09-02"
+updated_at: "2026-09-28"
 feature_size: S
 stage: "04-05"
 ticket: "-"
