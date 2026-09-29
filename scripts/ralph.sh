@@ -78,18 +78,25 @@ while :; do
   echo "--- Ітерація $ITER (разом ~\$$TOTAL) ---"
   START=$(date +%s)
   # Холодний старт: новий процес, промпт через stdin, сесія не зберігається.
+  # --setting-sources project,local: без user-налаштувань (мова, output style, плагіни) —
+  # у першому прогоні агент успадкував Explanatory-стиль і палив токени на Insight-блоки.
   OUT=$("$CLAUDE_BIN" -p --output-format json --model "$MODEL" \
     --permission-mode dontAsk --max-budget-usd "$ITER_BUDGET_USD" --no-session-persistence \
+    --setting-sources project,local \
     --allowedTools "${ALLOWED[@]}" --disallowedTools "${DENIED[@]}" < "$PROMPT_FILE")
   RC=$?
   DUR=$(( $(date +%s) - START ))
+  # Повний JSON ітерації поруч з логом: без нього не видно, ЩО саме відхилив dontAsk.
+  printf '%s' "$OUT" > "${COST_LOG%.tsv}.iter$ITER.json"
 
   read -r COST TURNS ERR DENIALS INFRA < <(printf '%s' "$OUT" | node -e '
     let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
       try {
         const j = JSON.parse(s);
         const infra = j.terminal_reason === "api_error" ? 1 : 0;
-        console.log([j.total_cost_usd ?? 0, j.num_turns ?? 0, j.is_error ? 1 : 0, (j.permission_denials || []).length, infra].join(" "));
+        const denials = j.permission_denials || [];
+        console.log([j.total_cost_usd ?? 0, j.num_turns ?? 0, j.is_error ? 1 : 0, denials.length, infra].join(" "));
+        for (const d of denials) console.error("    denied: " + d.tool_name + " " + JSON.stringify(d.tool_input || {}).slice(0, 200));
         console.error((j.result || "").slice(-600));
       } catch { console.log("0 0 parse 0 1"); console.error(s.slice(-600)); }
     });')
