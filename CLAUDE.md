@@ -41,3 +41,14 @@ infrastructure -> domain (реалізує інтерфейси domain)
 - Domain-сутності — класи без декораторів, валідація інваріантів у конструкторі.
 - Use cases — один клас = одна дія (`CreateTrip`, `AddExpense`), метод `execute()`.
 - HTTP-схеми (zod) тільки в `presentation/`, у domain вони не протікають.
+
+## TDD-контракт (урок 7.7)
+
+- Story-файли: `docs/features/<epic>/tasks/<ID>-*.md` (AC у форматі GWT, `files:` у frontmatter).
+- Тестовий контракт = `src/**/*.test.ts` + `src/**/testing/**` (тести колоковані з кодом, vitest).
+- Прогін: `npx vitest run` (весь набір ~2 с), типи: `./node_modules/.bin/tsc --noEmit`.
+- Порядок комітів story: `test(<ID>): add failing tests per AC` → `feat(<ID>): implement to make tests pass` → опційно `refactor(<ID>): …`.
+- RED-коміт може містити заглушки публічного API (сигнатури, класи помилок, інтерфейси портів) з тілом `throw new Error('not implemented')` — щоб tsc був зелений, а тести падали на поведінці, а не на імпорті.
+- Хук `scripts/hooks/commit-msg` сам перевіряє: `test(<ID>)` — vitest мусить бути червоним; `feat|refactor(<ID>)` — зелений, тестів у staged немає, `test(<ID>)` вже в історії.
+- Після RED тести не змінюються. Якщо тест здається неправильним — зупинись і скажи, не правь його.
+- Гейти між фазами: `node scripts/tdd-gate.mjs <red|green|refactor> <ID>`.

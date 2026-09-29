@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Гейт комітів trip-ledger (уроки 7.6 → 7.7). commit-msg, а не pre-commit: гейт має знати тему коміту.
+#   Звичайний коміт: tsc --noEmit && vitest зелені; критичний шлях → вердикт clean-reviewer для цього diff.
+#   TDD-коміт (scope = id story з docs/features/*/tasks/<ID>-*.md):
+#     test(<ID>):             tsc зелений, vitest ЧЕРВОНИЙ (RED фіксує падаючі тести), рецензент не потрібен
+#     feat|refactor(<ID>):    tsc+vitest зелені, у staged немає тестів (контракт read-only),
+#                             в історії є test(<ID>) — замість вердикту рецензента контракт із падаючих тестів
+# Встановлення: make install-hooks  (core.hooksPath = scripts/hooks)
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+subject=$(head -n1 "$1" | tr -d '\r')
+scope=$(printf '%s' "$subject" | sed -nE 's/^(test|feat|refactor)\(([A-Z]+[0-9]*-?[0-9]+)\):.*/\2/p')
+kind=$(printf '%s' "$subject" | sed -nE 's/^(test|feat|refactor)\(.*/\1/p')
+tdd=""
+if [ -n "$scope" ] && ls docs/features/*/tasks/"$scope"-*.md >/dev/null 2>&1; then tdd="$kind"; fi
+
+echo "▶ gate: tsc --noEmit && vitest run${tdd:+  (TDD $tdd $scope)}"
+if ! ./node_modules/.bin/tsc --noEmit; then echo "✗ tsc червоний — коміт заблоковано"; exit 1; fi
+npx vitest run --reporter=dot >/tmp/trip-ledger-gate.log 2>&1; vitest_rc=$?
+
+if [ "$tdd" = "test" ]; then
+  if [ $vitest_rc -eq 0 ]; then echo "✗ test($scope): vitest зелений — RED-коміт мусить містити падаючі тести"; exit 1; fi
+  echo "✓ RED: vitest червоний, як і має бути для test($scope)"; exit 0
+fi
+
+if [ $vitest_rc -ne 0 ]; then tail -n 30 /tmp/trip-ledger-gate.log; echo "✗ vitest червоний — коміт заблоковано"; exit 1; fi
+grep -E 'Tests +[0-9]+ passed' /tmp/trip-ledger-gate.log || true
+
+if [ -n "$tdd" ]; then
+  staged_tests=$(git diff --cached --name-only -- ':(glob)src/**/*.test.ts' ':(glob)src/**/testing/**')
+  if [ -n "$staged_tests" ]; then echo "✗ $tdd($scope): у staged є тести — після RED контракт read-only:"; echo "$staged_tests"; exit 1; fi
+  if ! git log --format=%s -n 50 | grep -q "^test($scope)"; then echo "✗ $tdd($scope): в історії немає test($scope) — спершу RED"; exit 1; fi
+  echo "✓ TDD $tdd($scope): зелено, тести не зачеплено, RED-контракт у історії"; exit 0
+fi
+
+hash=$(scripts/critical-diff-hash.sh --cached)
+if [ -z "$hash" ]; then
+  echo "✓ критичні шляхи не зачеплено — рецензент не потрібен"; exit 0
+fi
+
+verdict_file="review/verdicts/$hash.txt"
+if [ ! -f "$verdict_file" ]; then
+  echo "✗ критичний шлях зачеплено, вердикту для diff $hash немає."
+  echo "  Прожени /review-clean <story> і збережи вердикт у $verdict_file"
+  exit 1
+fi
+verdict=$(grep -oE '^Вердикт: (ACCEPT|WARN|PARTIAL|REJECT)' "$verdict_file" | head -1 | cut -d' ' -f2)
+case "$verdict" in
+  ACCEPT|WARN) echo "✓ clean-reviewer: $verdict для diff $hash"; exit 0 ;;
+  *) echo "✗ clean-reviewer: ${verdict:-немає вердикту} для diff $hash — коміт заблоковано"; exit 1 ;;
+esac
