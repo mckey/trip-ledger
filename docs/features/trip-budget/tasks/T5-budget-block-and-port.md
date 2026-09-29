@@ -7,7 +7,7 @@ acs: ["AC-03", "AC-03b", "AC-05", "AC-06", "AC-06b"]
 files_hint: ["src/expenses/domain/Expense.ts", "src/expenses/application/BudgetBlock.ts", "src/expenses/application/BudgetBlock.test.ts", "src/expenses/infrastructure/TripRepositoryBudgetPort.ts", "src/expenses/infrastructure/TripRepositoryBudgetPort.test.ts", "src/expenses/testing/anExpense.ts"]
 owner: "Vladimir Makarov"
 estimate: "M"
-status: "todo"
+status: "review"
 ---
 
 # T5 — Додати TripBudgetPort, чисту функцію BudgetBlock і адаптер TripRepositoryBudgetPort у BC expenses
