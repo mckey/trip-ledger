@@ -1,7 +1,7 @@
 // Domain-сутність. Ніяких імпортів з application/infrastructure/presentation.
 
 import { Money } from '../../shared/Money';
-import { BudgetCurrencyMismatchError } from './errors';
+import { BaseCurrencyLockedError, BudgetCurrencyMismatchError } from './errors';
 
 export type TripStatus = 'planned' | 'active' | 'finished';
 
@@ -46,8 +46,12 @@ export class Trip {
     this.budgetSetAt = now;
   }
 
-  setBaseCurrency(_currency: string, _hasRatedExpenses: boolean): void {
-    throw new Error('not implemented');
+  setBaseCurrency(currency: string, hasRatedExpenses: boolean): void {
+    if (this.baseCurrency === currency) return;
+    if (this.baseCurrency !== undefined && hasRatedExpenses) {
+      throw new BaseCurrencyLockedError(this.baseCurrency, currency);
+    }
+    this.baseCurrency = currency;
   }
 }
 
