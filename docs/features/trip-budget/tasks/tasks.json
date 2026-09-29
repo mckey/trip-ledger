@@ -1,0 +1,288 @@
+{
+  "slug": "trip-budget",
+  "tasks": [
+    {
+      "id": "T0",
+      "title": "Узгодити контракт trip-budget з живим дротом: прогін contract-forge --update (F1/F2)",
+      "layer": "docs",
+      "deps": [],
+      "acs": [
+        "AC-01",
+        "AC-03",
+        "AC-08"
+      ],
+      "dod": "contracts.mjs lint trip-budget — 0 problems, tsc зелений на оновлених моках; спільні з multi-currency-summary ендпойнти мають однакові регістр, шляхи, помилки й X-API-Key; F1/F2 закриті в api-sync-report.",
+      "files_hint": [
+        "docs/features/trip-budget/contracts/openapi.yaml",
+        "docs/features/trip-budget/contracts/api-sync-report.md",
+        "src/contracts/trip-budget.gen.ts",
+        "src/contracts/trip-budget.fixtures.ts"
+      ]
+    },
+    {
+      "id": "T1",
+      "title": "Додати знаковий value object Balance у src/shared",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-03b"
+      ],
+      "dod": "Balance.test.ts (з property-тестом) зелений: знакове віднімання в мінорних одиницях без похибки, різні валюти кидають помилку; Money не змінено.",
+      "files_hint": [
+        "src/shared/Balance.ts",
+        "src/shared/Balance.test.ts"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Додати budget, base currency і setBudget() у доменну сутність Trip",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-01",
+        "AC-02",
+        "AC-07",
+        "AC-09"
+      ],
+      "dod": "Trip.test.ts зелений: перше setBudget фіксує base currency, заміна в тій самій валюті перезаписує, інша валюта кидає BudgetCurrencyMismatchError, нуль відкидається, finished-поїздка приймає budget.",
+      "files_hint": [
+        "src/trips/domain/Trip.ts",
+        "src/trips/domain/errors.ts",
+        "src/trips/domain/Trip.test.ts",
+        "src/trips/testing/aTrip.ts"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Промотувати міграцію budget на trips і змапити колонки в PostgresTripRepository",
+      "layer": "migration",
+      "deps": [
+        "T2"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-07"
+      ],
+      "dod": "Staged-пара 20260928120000 промотована в живий migrations/, db-roundtrip up → down → up чистий, у тому ж PR промотовано CHECK-и mcs …140100000; PostgresTripRepository зберігає і читає budget, base currency і budget_set_at.",
+      "files_hint": [
+        "docs/features/trip-budget/migrations/20260928120000_add_budget_to_trips.up.sql",
+        "docs/features/trip-budget/migrations/20260928120000_add_budget_to_trips.down.sql",
+        "docs/features/multi-currency-summary/migrations/20260928140100000_add_budget_checks_to_trips.sql",
+        "src/trips/infrastructure/PostgresTripRepository.ts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Додати use case SetTripBudget у BC trips",
+      "layer": "app",
+      "deps": [
+        "T2"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-02",
+        "AC-07",
+        "AC-09"
+      ],
+      "dod": "SetTripBudget.test.ts зелений для AC-01, AC-02, AC-07, AC-09, а невідома поїздка дає TripDoesNotExistError.",
+      "files_hint": [
+        "src/trips/application/SetTripBudget.ts",
+        "src/trips/application/SetTripBudget.test.ts"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Додати TripBudgetPort, чисту функцію BudgetBlock і адаптер TripRepositoryBudgetPort у BC expenses",
+      "layer": "app",
+      "deps": [
+        "T1",
+        "T2"
+      ],
+      "acs": [
+        "AC-03",
+        "AC-03b",
+        "AC-05",
+        "AC-06",
+        "AC-06b"
+      ],
+      "dod": "BudgetBlock.test.ts зелений: remaining = budget − Σ counted, від'ємний лишається від'ємним з overspend, чужовалютні лише в uncounted, усі чужовалютні → повний budget; адаптер без budget повертає null.",
+      "files_hint": [
+        "src/expenses/domain/Expense.ts",
+        "src/expenses/application/BudgetBlock.ts",
+        "src/expenses/application/BudgetBlock.test.ts",
+        "src/expenses/infrastructure/TripRepositoryBudgetPort.ts",
+        "src/expenses/infrastructure/TripRepositoryBudgetPort.test.ts",
+        "src/expenses/testing/anExpense.ts"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Повернути блок budget з AddExpense і GetTripSummary",
+      "layer": "app",
+      "deps": [
+        "T5"
+      ],
+      "acs": [
+        "AC-03",
+        "AC-03b",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-06b",
+        "AC-07"
+      ],
+      "dod": "Тести AddExpense і GetTripSummary зелені: витрата понад budget зберігається з overspend signal, підсумок повертає { lines, budget }, заміна budget не змінює збережених витрат.",
+      "files_hint": [
+        "src/expenses/application/AddExpense.ts",
+        "src/expenses/application/AddExpense.test.ts",
+        "src/expenses/application/GetTripSummary.ts",
+        "src/expenses/application/GetTripSummary.test.ts",
+        "src/expenses/presentation/expensesRouter.ts",
+        "src/presentation/app.ts"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Крок 1/3 currency_code: промотувати expand-міграцію і ввімкнути dual-write у PostgresExpenseRepository",
+      "layer": "migration",
+      "deps": [
+        "T3"
+      ],
+      "acs": [
+        "AC-06"
+      ],
+      "dod": "Staged-пара 20260928120100 промотована і чисто проходить roundtrip; нові витрати пишуть і currency, і нормалізований currency_code.",
+      "files_hint": [
+        "docs/features/trip-budget/migrations/20260928120100_add_currency_code_to_expenses.up.sql",
+        "docs/features/trip-budget/migrations/20260928120100_add_currency_code_to_expenses.down.sql",
+        "src/expenses/infrastructure/PostgresExpenseRepository.ts"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Крок 2/3 currency_code: промотувати backfill-міграцію і читати COALESCE(currency_code, currency)",
+      "layer": "migration",
+      "deps": [
+        "T7"
+      ],
+      "acs": [
+        "AC-06"
+      ],
+      "dod": "Staged-пара 20260928120200 промотована і чисто проходить roundtrip; неоднозначні значення лишаються NULL і читаються через COALESCE(currency_code, currency).",
+      "files_hint": [
+        "docs/features/trip-budget/migrations/20260928120200_backfill_currency_code_in_expenses.up.sql",
+        "docs/features/trip-budget/migrations/20260928120200_backfill_currency_code_in_expenses.down.sql",
+        "src/expenses/infrastructure/PostgresExpenseRepository.ts"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Крок 3/3 currency_code: перевести PostgresExpenseRepository лише на currency_code і промотувати contract-міграцію",
+      "layer": "migration",
+      "deps": [
+        "T8"
+      ],
+      "acs": [
+        "AC-06"
+      ],
+      "dod": "При 0 рядків з NULL currency_code задеплоєно код лише з currency_code, потім staged-пара 20260928120300 промотована і чисто проходить roundtrip.",
+      "files_hint": [
+        "docs/features/trip-budget/migrations/20260928120300_contract_currency_on_expenses.up.sql",
+        "docs/features/trip-budget/migrations/20260928120300_contract_currency_on_expenses.down.sql",
+        "src/expenses/infrastructure/PostgresExpenseRepository.ts"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Додати маршрут PUT /trips/{trip_id}/budget і презентер Trip у tripsRouter",
+      "layer": "ports",
+      "deps": [
+        "T0",
+        "T4"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-02",
+        "AC-07",
+        "AC-09"
+      ],
+      "dod": "trips.http.test.ts зелений: PUT budget → 200 за TripBudget (AC-01/07/09), 422 для невалідної суми чи чужої валюти (AC-02), 404 для невідомої поїздки; форма GET /trips/:id не змінилась.",
+      "files_hint": [
+        "src/trips/presentation/tripsRouter.ts",
+        "src/trips/presentation/trips.http.test.ts",
+        "src/trips/presentation/tripPresenter.ts",
+        "src/presentation/http.ts"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Перевести POST /trips/{trip_id}/expenses і GET /trips/{trip_id}/summary на форму контракту з блоком budget",
+      "layer": "ports",
+      "deps": [
+        "T6",
+        "T10"
+      ],
+      "acs": [
+        "AC-03",
+        "AC-03b",
+        "AC-04",
+        "AC-06",
+        "AC-06b"
+      ],
+      "dod": "expenses.http.test.ts зелений: POST → 201 envelope з блоком budget і overspend signal, GET summary → { lines, budget }, обидва збігаються з trip-budget.fixtures.ts.",
+      "files_hint": [
+        "src/expenses/presentation/expensesRouter.ts",
+        "src/expenses/presentation/expenses.http.test.ts",
+        "src/expenses/presentation/budgetBlockPresenter.ts",
+        "src/presentation/http.ts"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Зшити TripBudgetPort у createApp і додати API-key та request-timing middleware",
+      "layer": "wiring",
+      "deps": [
+        "T5",
+        "T10",
+        "T11"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-08"
+      ],
+      "dod": "apiKeyAuth.test.ts зелений: без ключа чи з чужим — однаковий 401 до будь-якого звернення до репозиторію (AC-08); з ключем блок підсумку рахується від budget цієї поїздки через TripBudgetPort (AC-05); server.ts не стартує без API_KEY.",
+      "files_hint": [
+        "src/presentation/app.ts",
+        "src/presentation/server.ts",
+        "src/presentation/apiKeyAuth.ts",
+        "src/presentation/apiKeyAuth.test.ts",
+        "src/presentation/requestTiming.ts",
+        "src/trips/presentation/trips.http.test.ts",
+        "src/expenses/presentation/expenses.http.test.ts"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Написати наскрізний HTTP-тест сценарію trip-budget з перевіркою латентності підсумку",
+      "layer": "tests",
+      "deps": [
+        "T12"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-03",
+        "AC-03b",
+        "AC-04",
+        "AC-05",
+        "AC-06b",
+        "AC-07",
+        "AC-08",
+        "AC-09"
+      ],
+      "dod": "tripBudget.e2e.test.ts зелений наскрізь поверх createApp для перелічених AC, включно з підсумком < 250 ms на 300 витратах.",
+      "files_hint": [
+        "src/presentation/tripBudget.e2e.test.ts"
+      ]
+    }
+  ]
+}

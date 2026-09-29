@@ -1,0 +1,357 @@
+{
+  "slug": "multi-currency-summary",
+  "generated_by": "task-forge",
+  "tasks": [
+    {
+      "id": "DOC-1",
+      "title": "Back-port уточнень у словники, PRD §9, документи trip-budget і ARCHITECTURE.md",
+      "layer": "docs",
+      "bc": "cross",
+      "wave": 1,
+      "deps": [],
+      "external_deps": [],
+      "acs": [
+        "AC-06",
+        "AC-07",
+        "AC-09"
+      ],
+      "dod": "AC-d1-1..4 перевірено читанням diff-у, а не пошуком слова",
+      "files_hint": [
+        "CONTEXT.md",
+        "docs/features/trip-budget/CONTEXT.md",
+        "docs/features/trip-budget/sad.md",
+        "docs/features/trip-budget/adr/0001-budget-as-columns-on-trips.md",
+        "docs/features/multi-currency-summary/PRD.md",
+        "ARCHITECTURE.md"
+      ]
+    },
+    {
+      "id": "MIG-1",
+      "title": "Промоція staged-міграції rate snapshot на expenses",
+      "layer": "migration",
+      "bc": "expenses",
+      "wave": 1,
+      "deps": [],
+      "external_deps": [
+        "trip-budget:T3"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-05"
+      ],
+      "dod": "Staged roundtrip (Step 1) і roundtrip після промоції (AC-m1-3) зелені на Postgres з `docker-compose.yml`, вивід у PR",
+      "files_hint": [
+        "migrations/",
+        "docs/features/multi-currency-summary/migrations/20260928140000000_add_rate_snapshot_to_expenses.sql",
+        "docs/features/multi-currency-summary/check-probes.sql"
+      ]
+    },
+    {
+      "id": "SHR-1",
+      "title": "Value object Rate у shared: BigInt ×10⁹, parse ≤ 9 знаків, apply half-up",
+      "layer": "domain",
+      "bc": "shared",
+      "wave": 1,
+      "deps": [],
+      "external_deps": [],
+      "acs": [
+        "AC-02",
+        "AC-03b"
+      ],
+      "dod": "`Rate.test.ts` зелений, включно з property-тестом AC-03b на ≥ 1000 пар",
+      "files_hint": [
+        "src/shared/Rate.ts",
+        "src/shared/Rate.test.ts"
+      ]
+    },
+    {
+      "id": "TRP-1",
+      "title": "Trip.setBaseCurrency з локом через RatedExpensesPort + BaseCurrencyLockedError",
+      "layer": "domain",
+      "bc": "trips",
+      "wave": 1,
+      "deps": [],
+      "external_deps": [
+        "trip-budget:T2"
+      ],
+      "acs": [
+        "AC-06",
+        "AC-07"
+      ],
+      "dod": "`Trip.test.ts` зелений на AC-t1-1..5; AC-07 покрито всіма гілками, AC-06 — base currency без budget",
+      "files_hint": [
+        "src/trips/domain/Trip.ts",
+        "src/trips/domain/errors.ts",
+        "src/trips/domain/Trip.test.ts"
+      ]
+    },
+    {
+      "id": "EXP-1",
+      "title": "Expense.rate / withRate, findById в обох репозиторіях, нові помилки, TripBudgetPort з baseCurrency",
+      "layer": "domain",
+      "bc": "expenses",
+      "wave": 2,
+      "deps": [
+        "SHR-1"
+      ],
+      "external_deps": [
+        "trip-budget:T6",
+        "trip-budget:T8"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-05"
+      ],
+      "dod": "`Expense.test.ts` зелений на AC-e1-1..4 (AC-01, AC-05)",
+      "files_hint": [
+        "src/expenses/domain/Expense.ts",
+        "src/expenses/domain/errors.ts",
+        "src/expenses/domain/Expense.test.ts",
+        "src/expenses/testing/anExpense.ts",
+        "src/expenses/infrastructure/InMemoryExpenseRepository.ts",
+        "src/expenses/infrastructure/PostgresExpenseRepository.ts",
+        "src/expenses/infrastructure/TripRepositoryBudgetPort.ts",
+        "src/expenses/application/AddExpense.ts",
+        "src/expenses/application/GetTripSummary.ts"
+      ]
+    },
+    {
+      "id": "TRP-2",
+      "title": "Use case SetTripBaseCurrency і необов'язкова baseCurrency у CreateTrip",
+      "layer": "app",
+      "bc": "trips",
+      "wave": 2,
+      "deps": [
+        "TRP-1"
+      ],
+      "external_deps": [],
+      "acs": [
+        "AC-06",
+        "AC-07"
+      ],
+      "dod": "`SetTripBaseCurrency.test.ts` і `CreateTrip.test.ts` зелені (AC-07, AC-06)",
+      "files_hint": [
+        "src/trips/application/SetTripBaseCurrency.ts",
+        "src/trips/application/SetTripBaseCurrency.test.ts",
+        "src/trips/application/CreateTrip.ts",
+        "src/trips/application/CreateTrip.test.ts"
+      ]
+    },
+    {
+      "id": "EXP-2",
+      "title": "AddExpense приймає необов'язковий rate; курс без base currency → BaseCurrencyNotSetError",
+      "layer": "app",
+      "bc": "expenses",
+      "wave": 3,
+      "deps": [
+        "EXP-1"
+      ],
+      "external_deps": [
+        "trip-budget:T6"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-06"
+      ],
+      "dod": "`AddExpense.test.ts` зелений на AC-e2-1..4 (AC-01, AC-06)",
+      "files_hint": [
+        "src/expenses/application/AddExpense.ts",
+        "src/expenses/application/AddExpense.test.ts"
+      ]
+    },
+    {
+      "id": "EXP-3",
+      "title": "Use case SetExpenseRate: заміна курсу на збереженій витраті, дозволена у finished",
+      "layer": "app",
+      "bc": "expenses",
+      "wave": 3,
+      "deps": [
+        "EXP-1"
+      ],
+      "external_deps": [],
+      "acs": [
+        "AC-05",
+        "AC-08"
+      ],
+      "dod": "`SetExpenseRate.test.ts` зелений на AC-e3-1..4 (AC-05, AC-08)",
+      "files_hint": [
+        "src/expenses/application/SetExpenseRate.ts",
+        "src/expenses/application/SetExpenseRate.test.ts"
+      ]
+    },
+    {
+      "id": "EXP-4",
+      "title": "BudgetBlock і GetTripSummary: counted за effective rate, блок converted { total, withoutRate } | null",
+      "layer": "app",
+      "bc": "expenses",
+      "wave": 3,
+      "deps": [
+        "SHR-1",
+        "EXP-1"
+      ],
+      "external_deps": [
+        "trip-budget:T6"
+      ],
+      "acs": [
+        "AC-03",
+        "AC-03b",
+        "AC-04",
+        "AC-06",
+        "AC-09"
+      ],
+      "dod": "`GetTripSummary.test.ts` і `BudgetBlock.test.ts` зелені на AC-e4-1..5 (AC-03, AC-03b, AC-04, AC-06, AC-09)",
+      "files_hint": [
+        "src/expenses/application/BudgetBlock.ts",
+        "src/expenses/application/BudgetBlock.test.ts",
+        "src/expenses/application/GetTripSummary.ts",
+        "src/expenses/application/GetTripSummary.test.ts"
+      ]
+    },
+    {
+      "id": "EXP-5",
+      "title": "Репозиторії витрат: мапінг rate_nano ↔ BigInt і rate_set_at, hasRatedExpenses",
+      "layer": "infra",
+      "bc": "expenses",
+      "wave": 3,
+      "deps": [
+        "EXP-1",
+        "MIG-1"
+      ],
+      "external_deps": [],
+      "acs": [
+        "AC-01",
+        "AC-05",
+        "AC-07"
+      ],
+      "dod": "`expenseRow.test.ts` зелений на AC-e5-1; AC-05 і AC-07 перевірені на `InMemoryExpenseRepository`",
+      "files_hint": [
+        "src/expenses/domain/Expense.ts",
+        "src/expenses/infrastructure/PostgresExpenseRepository.ts",
+        "src/expenses/infrastructure/InMemoryExpenseRepository.ts",
+        "src/expenses/infrastructure/expenseRow.ts",
+        "src/expenses/infrastructure/expenseRow.test.ts"
+      ]
+    },
+    {
+      "id": "HTTP-1",
+      "title": "expensesRouter: rate у додаванні витрати і маршрут заміни курсу",
+      "layer": "ports",
+      "bc": "http",
+      "wave": 4,
+      "deps": [
+        "EXP-2",
+        "EXP-3",
+        "EXP-5"
+      ],
+      "external_deps": [
+        "trip-budget:T12"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-02",
+        "AC-05",
+        "AC-08"
+      ],
+      "dod": "`expenses.http.test.ts` зелений на AC-h1-1..6 (AC-01, AC-02, AC-05, AC-08); `expensePresenter.ts` — єдине місце серіалізації витрати",
+      "files_hint": [
+        "src/expenses/presentation/expensesRouter.ts",
+        "src/expenses/presentation/expensePresenter.ts",
+        "src/expenses/presentation/expenses.http.test.ts"
+      ]
+    },
+    {
+      "id": "X-1",
+      "title": "Адаптер ExpenseRepositoryRatedPort у trips/infrastructure — зворотний порт trips → expenses",
+      "layer": "infra",
+      "bc": "cross",
+      "wave": 4,
+      "deps": [
+        "TRP-1",
+        "EXP-5"
+      ],
+      "external_deps": [],
+      "acs": [
+        "AC-07"
+      ],
+      "dod": "`ExpenseRepositoryRatedPort.test.ts` зелений на AC-x1-1..2 (AC-07)",
+      "files_hint": [
+        "src/trips/infrastructure/ExpenseRepositoryRatedPort.ts",
+        "src/trips/infrastructure/ExpenseRepositoryRatedPort.test.ts"
+      ]
+    },
+    {
+      "id": "HTTP-2",
+      "title": "tripsRouter: baseCurrency у створенні, маршрут зміни base currency, зшивання RatedExpensesPort в app.ts",
+      "layer": "wiring",
+      "bc": "http",
+      "wave": 5,
+      "deps": [
+        "TRP-2",
+        "X-1"
+      ],
+      "external_deps": [
+        "trip-budget:T12"
+      ],
+      "acs": [
+        "AC-06",
+        "AC-07"
+      ],
+      "dod": "`trips.http.test.ts` зелений на AC-h2-1..5 (AC-06, AC-07)",
+      "files_hint": [
+        "src/trips/presentation/tripsRouter.ts",
+        "src/trips/presentation/tripPresenter.ts",
+        "src/trips/presentation/trips.http.test.ts",
+        "src/presentation/app.ts"
+      ]
+    },
+    {
+      "id": "HTTP-3",
+      "title": "Маршрут підсумку віддає блок converted { total, withoutRate } | null",
+      "layer": "ports",
+      "bc": "http",
+      "wave": 5,
+      "deps": [
+        "EXP-4",
+        "HTTP-1"
+      ],
+      "external_deps": [
+        "trip-budget:T12"
+      ],
+      "acs": [
+        "AC-03",
+        "AC-03b",
+        "AC-04",
+        "AC-09"
+      ],
+      "dod": "`expenses.http.test.ts` зелений на AC-h3-1..6 (AC-03, AC-03b, AC-04, AC-09); p95 записаний у PR-описі",
+      "files_hint": [
+        "src/expenses/presentation/expensesRouter.ts",
+        "src/expenses/presentation/expenses.http.test.ts"
+      ]
+    },
+    {
+      "id": "E2E-1",
+      "title": "HTTP-сценарій мультивалютної поїздки від створення до дозаповнення курсів",
+      "layer": "tests",
+      "bc": "http",
+      "wave": 6,
+      "deps": [
+        "HTTP-2",
+        "HTTP-3"
+      ],
+      "external_deps": [],
+      "acs": [
+        "AC-01",
+        "AC-04",
+        "AC-05",
+        "AC-07",
+        "AC-08",
+        "AC-09"
+      ],
+      "dod": "`multiCurrency.e2e.test.ts` зелений: AC-01, AC-04, AC-05, AC-07, AC-08, AC-09 пройдені одним сценарієм",
+      "files_hint": [
+        "src/presentation/multiCurrency.e2e.test.ts"
+      ]
+    }
+  ]
+}
