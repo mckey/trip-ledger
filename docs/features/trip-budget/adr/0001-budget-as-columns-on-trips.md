@@ -2,7 +2,7 @@
 status: Accepted
 owner: "Vladimir Makarov"
 reviewers: []
-updated_at: "2026-09-02"
+updated_at: "2026-09-28"
 feature_size: S
 stage: "04-05"
 ticket: "-"
@@ -54,6 +54,14 @@ PRD §4 (US-01, US-05, US-06): owner задає budget поїздки одніє
 **Нейтральні:**
 - `trips` отримує другий use case і другий маршрут запису; форма контракту фіксується на стадії 6.6.
 - CHECK-обмеження у БД дублює доменну валідацію (`Money` не приймає ≤ 0 для budget) — свідомо, як друга лінія захисту.
+
+## Amendment 2026-09-28 — CHECK-и в БД
+
+Стадія data model переглянула «Нейтральний» наслідок про CHECK як другу лінію захисту:
+
+- `budget_minor > 0` у БД **не ставимо** — це продуктовий поріг AC-02, він живе в `Trip.setBudget()` і zod. У БД — `budget_minor >= 0`, дзеркало інваріанта `Money`.
+- Парність у дозвільній формі `budget_minor IS NULL OR base_currency IS NOT NULL` замість рівності — base currency існує й без budget (multi-currency-summary ADR-0004).
+- Обидва CHECK — у staged-міграції `multi-currency-summary/migrations/20260928140100000_add_budget_checks_to_trips.sql`, промоція одним деплоєм з `trip-budget/migrations/20260928120000_add_budget_to_trips`. Деталі — `../data-model.md`, `../../multi-currency-summary/data-model.md` §«Рішення ADR ↔ rules».
 
 ## Links
 

@@ -1,0 +1,19 @@
+# Локальний Postgres для перевірки міграцій (roundtrip up → down → up).
+# Версію зафіксовано тут — закриває борг SAD trip-budget §11 «версія PostgreSQL не зафіксована».
+# Креденшели — лише для одноразової локальної бази, не для середовищ.
+# name фіксує ім'я мережі (trip-ledger_default), на яке спирається scripts/db-roundtrip.sh.
+name: trip-ledger
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      POSTGRES_DB: trip_ledger
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d trip_ledger"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

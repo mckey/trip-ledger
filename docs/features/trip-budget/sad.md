@@ -197,7 +197,7 @@ sequenceDiagram
                 T->>DB: зберегти поїздку (upsert)
                 DB-->>T: ok
                 T-->>HTTP: trip з budget
-                HTTP-->>O: підтвердження; підсумок відтепер показує блок залишку
+                HTTP-->>O: підтвердження — підсумок відтепер показує блок залишку
             end
         end
     end
@@ -239,7 +239,7 @@ sequenceDiagram
             E->>E: BudgetBlock: counted = витрати в base currency, uncounted = решта, remaining = budget − Σ counted (Balance, може бути < 0)
             E-->>HTTP: { expense, budget: { budget, remaining, counted, uncounted, overspend } }
         end
-        HTTP-->>O: витрату прийнято; якщо remaining < 0 — overspend signal у тій самій відповіді
+        HTTP-->>O: витрату прийнято (якщо remaining < 0 — overspend signal у тій самій відповіді)
     end
 ```
 
@@ -264,12 +264,45 @@ sequenceDiagram
         E-->>HTTP: { lines, budget: null } — підсумок як раніше
     else budget задано
         T-->>E: budget у base currency
-        E->>E: BudgetBlock: counted / uncounted; remaining = budget − Σ counted
+        E->>E: BudgetBlock: counted / uncounted — remaining = budget − Σ counted
         Note over E: усі витрати чужовалютні → remaining = повний budget, uncounted = усі (AC-06b)
         E-->>HTTP: { lines, budget: { budget, remaining, counted, uncounted, overspend } } — та сама форма блоку, що у flow 2
     end
-    HTTP-->>O: підсумок; від'ємний remaining показується від'ємним, не нулем (AC-03b)
+    HTTP-->>O: підсумок — від'ємний remaining показується від'ємним, не нулем (AC-03b)
 ```
+
+<!-- Sequence coverage audit (complete-sequence-diagrams, 2026-09-28): `_audit/sequences-2026-09-28.md`. -->
+<!-- Блоки нижче — generic-учасники за конвенцією complete-sequence-diagrams; flows 1–3 вище не переписані. -->
+
+### Cross-cutting: межа доступу до budget і підсумку (AC-08)
+
+<!-- Participants: <client>=HTTP-клієнт owner-а (або сторонній), <service>=trip-ledger API з API-key middleware (§8), <data-store>=PostgreSQL. Sync. -->
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as <client>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over C,S: Precondition: сервер слухає лише локальний інтерфейс, ключ owner-а заданий у конфігурації
+    C->>S: запит до budget або підсумку поїздки (з ключем або без)
+    S->>S: звірити ключ запиту з ключем owner-а до будь-якого читання
+    alt ключа немає або він не збігається
+        S-->>C: відмова в доступі без деталей, без згадки про поїздку
+        Note over S,D: сховище не зачеплено, тож відповідь однакова для наявної і неіснуючої поїздки
+    else ключ збігається
+        S->>D: прочитати поїздку, budget або витрати (далі flow 1, 2 чи 3)
+        D-->>S: дані
+        S-->>C: звичайна відповідь відповідного flow
+    end
+    Note over C,S: Postcondition: без ключа owner-а не можна дізнатися навіть факт існування поїздки
+```
+
+**Flagged (не авто-ADR):**
+- Flows 1–3 написані ще до конвенції generic-учасників (`HTTP presentation`, `BC trips`, `PostgreSQL`) і без `persists`-нотаток — за правилом «additive only» не переписані. Persist-кроки для data-model: flow 1 «зберегти поїздку (upsert)» → `trips`, flow 2 «зберегти витрату» → `expenses`; читання «усі витрати поїздки» (flow 2, 3) → `expenses.trip_id`.
+- Асинхронних сценаріїв у PRD немає (жодних webhook / cron / scheduled / queue / external) — усі 4 flows sync, idempotency-key / retry / DLQ не потрібні.
+- Порядок у AC-08-flow важливий: перевірка ключа **до** звернення до сховища — інакше різниця «401 vs 404» розкриває існування поїздки. Кандидат у тест на стадії 6.7, не в ADR.
 
 ## 7. Deployment view
 

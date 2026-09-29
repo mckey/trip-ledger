@@ -198,12 +198,12 @@ sequenceDiagram
                 E-->>HTTP: BaseCurrencyNotSetError
                 HTTP-->>O: відмова з поясненням: спершу задай base currency поїздки — інакше курс «до нічого»
             else курсу немає або base currency є
-                E->>DB: зберегти витрату (сума й валюта введення; rate_nano + rate_set_at або NULL)
+                E->>DB: зберегти витрату (сума й валюта введення, rate_nano + rate_set_at або NULL)
                 DB-->>E: ok
                 Note over E: валюта витрати = base currency ⇒ ефективний курс 1, поле не потрібне (AC-06)
                 E->>E: BudgetBlock над витратами поїздки (counted за ефективним курсом)
                 E-->>HTTP: { expense (з rate), budget: BudgetBlock | null }
-                HTTP-->>O: витрату прийнято; якщо курс є або валюта базова — вона вже у converted total і в залишку
+                HTTP-->>O: витрату прийнято (якщо курс є або валюта базова — вона вже у converted total і в залишку)
             end
         end
     end
@@ -233,11 +233,11 @@ sequenceDiagram
     else base currency задана
         T-->>E: base currency (+ budget або «не задано»)
         E->>E: для кожної витрати: ефективний курс = rate або 1 (базова валюта) або відсутній
-        E->>E: converted total = Σ Rate.apply(amount) (half-up, minor units); withoutRate = кількість без курсу
+        E->>E: converted total = Σ Rate.apply(amount) (half-up, minor units), withoutRate = кількість без курсу
         Note over E: та сама функція BudgetBlock: remaining = budget − converted Σ counted (Balance зі знаком)
         E-->>HTTP: { lines, converted: { total, withoutRate }, budget: BudgetBlock | null }
     end
-    HTTP-->>O: сирі суми ТА converted total поруч; лічильник чесно каже, скільки витрат поза перерахунком
+    HTTP-->>O: сирі суми ТА converted total поруч — лічильник чесно каже, скільки витрат поза перерахунком
 ```
 
 **Тестовий слід:** `it('shows raw per-currency totals and a converted total from rated expenses only')`, `it('keeps precision for tiny-rate currencies (no rounding to zero)')` (AC-03b), `it('counts expenses without a rate next to the converted total')`, `it('includes a rated foreign-currency expense in the budget remaining')` (AC-09) — `src/expenses/application/GetTripSummary.test.ts`.
@@ -261,18 +261,18 @@ sequenceDiagram
         HTTP-->>O: відмова: витрату не знайдено
     else витрата є
         DB-->>E: expense
-        Note over E: статус поїздки НЕ перевіряється — finished блокує нові витрати, не атрибути наявних (AC-08); base currency у поїздки має бути (інакше BaseCurrencyNotSetError, як у flow 1)
-        E->>E: expense.withRate(rate) — сума й валюта введення не змінюються; rateSetAt = now
+        Note over E: статус поїздки НЕ перевіряється — finished блокує нові витрати, не атрибути наявних (AC-08). Base currency у поїздки має бути (інакше BaseCurrencyNotSetError, як у flow 1)
+        E->>E: expense.withRate(rate) — сума й валюта введення не змінюються, rateSetAt = now
         E->>DB: зберегти витрату (upsert)
         DB-->>E: ok
         E-->>HTTP: expense з новим курсом
-        HTTP-->>O: курс замінено; попереднє значення ніде не зберігається (AC-05)
+        HTTP-->>O: курс замінено — попереднє значення ніде не зберігається (AC-05)
     end
 
     O->>HTTP: змінити base currency поїздки
     HTTP->>T: SetTripBaseCurrency(tripId, currency)
     Note over T: перше задання base currency порт не питає — дозволене завжди
-    T->>E: є витрати з ЯВНИМ rate snapshot? (RatedExpensesPort; похідний курс 1 не рахується)
+    T->>E: є витрати з ЯВНИМ rate snapshot? (RatedExpensesPort, похідний курс 1 не рахується)
     alt є хоча б одна
         E-->>T: так
         T-->>HTTP: BaseCurrencyLockedError
@@ -282,7 +282,7 @@ sequenceDiagram
         T->>DB: зберегти поїздку з новою base currency
         DB-->>T: ok
         T-->>HTTP: trip
-        HTTP-->>O: base currency змінено; витрати у старій валюті відтепер «без курсу» і видні у лічильнику
+        HTTP-->>O: base currency змінено — витрати у старій валюті відтепер «без курсу» і видні у лічильнику
     end
 ```
 
