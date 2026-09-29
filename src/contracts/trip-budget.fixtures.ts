@@ -9,32 +9,54 @@ type Json<Op extends keyof operations, Status extends keyof operations[Op]['resp
 const TRIP_ID = '00000000-0000-4000-8000-000000000001';
 
 export const setTripBudgetOk = {
-  trip_id: TRIP_ID,
-  budget_minor: 5_000_000,
-  base_currency: 'EUR',
-  budget_set_at: '2026-10-01T08:30:00Z',
+  tripId: TRIP_ID,
+  budget: { amount: 5_000_000, currency: 'EUR' },
+  budgetSetAt: '2026-10-01T08:30:00Z',
 } satisfies Json<'setTripBudget', 200>;
 
 export const addExpenseOverspend = {
   expense: {
     id: '00000000-0000-4000-8000-0000000000e1',
-    trip_id: TRIP_ID,
-    amount_minor: 4500,
-    currency_code: 'EUR',
+    tripId: TRIP_ID,
+    amount: { amount: 4500, currency: 'EUR' },
     category: 'food',
-    spent_at: '2026-10-03',
+    spentAt: '2026-10-03T00:00:00.000Z',
   },
   budget: {
-    budget_minor: 100_000,
-    base_currency: 'EUR',
-    remaining_minor: -2500,
+    budget: { amount: 100_000, currency: 'EUR' },
+    remaining: { amount: -2500, currency: 'EUR' },
     counted: 7,
     uncounted: 2,
     overspend: true,
   },
 } satisfies Json<'addExpense', 201>;
 
+export const addExpenseNoBudget = {
+  expense: {
+    id: '00000000-0000-4000-8000-0000000000e2',
+    tripId: '00000000-0000-4000-8000-000000000002',
+    amount: { amount: 1200, currency: 'UAH' },
+    category: 'transport',
+    spentAt: '2026-10-04T00:00:00.000Z',
+  },
+  budget: null,
+} satisfies Json<'addExpense', 201>;
+
+export const tripSummaryWithBudget = {
+  lines: [
+    { category: 'food', currency: 'EUR', total: { amount: 102_500, currency: 'EUR' } },
+    { category: 'transport', currency: 'UAH', total: { amount: 340_000, currency: 'UAH' } },
+  ],
+  budget: {
+    budget: { amount: 100_000, currency: 'EUR' },
+    remaining: { amount: -2500, currency: 'EUR' },
+    counted: 7,
+    uncounted: 2,
+    overspend: true,
+  },
+} satisfies Json<'getTripSummary', 200>;
+
 export const tripSummaryWithoutBudget = {
-  lines: [{ category: 'transport', currency_code: 'UAH', total_minor: 340_000 }],
+  lines: [{ category: 'transport', currency: 'UAH', total: { amount: 340_000, currency: 'UAH' } }],
   budget: null,
 } satisfies Json<'getTripSummary', 200>;

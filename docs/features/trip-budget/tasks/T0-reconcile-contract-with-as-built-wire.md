@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-03", "AC-08"]
 files_hint: ["docs/features/trip-budget/contracts/openapi.yaml", "docs/features/trip-budget/contracts/api-sync-report.md", "src/contracts/trip-budget.gen.ts", "src/contracts/trip-budget.fixtures.ts"]
 owner: "Vladimir Makarov"
 estimate: "M"
-status: "todo"
+status: "review"
 ---
 
 # T0 — Узгодити контракт trip-budget з живим дротом: прогін contract-forge --update (F1/F2)
