@@ -1,11 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { Money } from '../../shared/Money';
 import { Trip } from './Trip';
-import { BudgetCurrencyMismatchError } from './errors';
+import { BaseCurrencyLockedError, BudgetCurrencyMismatchError } from './errors';
 import { aTrip } from '../testing/aTrip';
 
 const T0 = new Date('2026-10-02T10:00:00Z');
 const T1 = new Date('2026-10-05T18:30:00Z');
+
+describe('Trip.setBaseCurrency()', () => {
+  it('AC-t1-1: перше задання base currency проходить, порт не зупиняє', () => {
+    const trip = aTrip();
+    trip.setBaseCurrency('EUR', true);
+    expect(trip.baseCurrency).toBe('EUR');
+  });
+
+  it('AC-t1-2: зміна вже заданої валюти за наявності явних курсів кидає BaseCurrencyLockedError і лишає EUR', () => {
+    const trip = aTrip({ baseCurrency: 'EUR' });
+    expect(() => trip.setBaseCurrency('PLN', true)).toThrow(BaseCurrencyLockedError);
+    expect(trip.baseCurrency).toBe('EUR');
+  });
+
+  it('AC-t1-3: зміна валюти без явних курсів (лише похідні з курсом 1) проходить', () => {
+    const trip = aTrip({ baseCurrency: 'EUR' });
+    trip.setBaseCurrency('PLN', false);
+    expect(trip.baseCurrency).toBe('PLN');
+  });
+
+  it('AC-t1-4: base currency задається без budget, budget лишається відсутнім', () => {
+    const trip = aTrip();
+    trip.setBaseCurrency('EUR', false);
+    expect(trip.baseCurrency).toBe('EUR');
+    expect(trip.budget).toBeUndefined();
+  });
+
+  it('AC-t1-5: повторне задання тієї самої валюти з явними курсами — no-op без помилки', () => {
+    const trip = aTrip({ baseCurrency: 'EUR' });
+    expect(() => trip.setBaseCurrency('EUR', true)).not.toThrow();
+    expect(trip.baseCurrency).toBe('EUR');
+  });
+});
 
 describe('Trip.setBudget()', () => {
   it('перше задання фіксує base currency, суму і час', () => {

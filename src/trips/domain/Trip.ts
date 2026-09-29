@@ -45,6 +45,14 @@ export class Trip {
     this.baseCurrency = money.currency;
     this.budgetSetAt = now;
   }
+
+  setBaseCurrency(_currency: string, _hasRatedExpenses: boolean): void {
+    throw new Error('not implemented');
+  }
+}
+
+export interface RatedExpensesPort {
+  hasRatedExpenses(tripId: string): Promise<boolean>;
 }
 
 export interface TripRepository {
