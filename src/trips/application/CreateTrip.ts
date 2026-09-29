@@ -20,6 +20,9 @@ export class CreateTrip {
       input.startsAt,
       input.endsAt,
     );
+    if (input.baseCurrency !== undefined) {
+      trip.setBaseCurrency(input.baseCurrency, false);
+    }
     await this.trips.save(trip);
     return trip;
   }
