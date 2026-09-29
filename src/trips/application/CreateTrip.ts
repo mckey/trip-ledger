@@ -6,6 +6,7 @@ export interface CreateTripInput {
   country: string;
   startsAt: Date;
   endsAt: Date;
+  baseCurrency?: string;
 }
 
 export class CreateTrip {
