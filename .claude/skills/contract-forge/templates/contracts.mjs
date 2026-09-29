@@ -37,10 +37,14 @@ if (cmd === 'gen') {
   }
 } else if (cmd === 'lint') {
   const bin = join(tools, '@stoplight', 'spectral-cli', 'dist', 'index.js');
-  execFileSync(process.execPath, [bin, 'lint', '--fail-severity', 'warn', ...slugs.map(specOf)], {
-    stdio: 'inherit',
-    cwd: root,
-  });
+  try {
+    execFileSync(process.execPath, [bin, 'lint', '--fail-severity', 'warn', ...slugs.map(specOf)], {
+      stdio: 'inherit',
+      cwd: root,
+    });
+  } catch (err) {
+    process.exit(err.status ?? 1); // spectral already printed the findings
+  }
 } else {
   console.error('usage: node scripts/contracts.mjs gen|lint [slug...]');
   process.exit(2);
