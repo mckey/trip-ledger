@@ -1,0 +1,706 @@
+openapi: 3.1.0
+info:
+  title: trip-ledger — multi-currency-summary API
+  version: 0.1.0
+  contact:
+    name: trip-ledger (pet project)
+    url: https://github.com/mckey/trip-ledger
+  description: |
+    Контракт фічі multi-currency-summary. Згенеровано `contract-forge`, сценарій A.
+
+    У закордонній поїздці 2–3 валюти, і підсумок по валютах окремо не відповідає
+    на «скільки я реально витратив»; залишок з trip-budget порівнює лише витрати
+    в base currency (у серпневій поїздці поза порівнянням лишилось ~40% суми).
+    Фіча додає необов'язковий rate snapshot на витрату, converted total у підсумку
+    поруч із сирими сумами і лічильник витрат без курсу (idea-brief §13, Approach C).
+
+    ## Scope
+
+    - `POST /trips` — CHANGED, additive: необов'язкова `baseCurrency` (sad.md §5, ADR-0004).
+    - `PUT /trips/{tripId}/base-currency` — NEW (AC-06, AC-07; ADR-0004).
+    - `POST /trips/{tripId}/expenses` — CHANGED: необов'язковий `rate` (AC-01, AC-02);
+      envelope `{expense, budget}` — з trip-budget ADR-0003.
+    - `PUT /expenses/{expenseId}/rate` — NEW (US-04, US-06; AC-05, AC-08; ADR-0001).
+    - `GET /trips/{tripId}/summary` — CHANGED: блок `converted` (ADR-0003); об'єкт
+      `{lines, budget}` — з trip-budget ADR-0002.
+
+    ## Sources of truth
+
+    PRD.md · sad.md §5 «Контракти», §6 flows 1–3, §8 · adr/0001–0004 · data-model.md ·
+    CONTEXT.md · src/trips/presentation/tripsRouter.ts, src/expenses/presentation/expensesRouter.ts ·
+    сусідні: docs/features/trip-budget/sad.md §5–§6, adr/0002–0004.
+    Походження кожного поля — `api-sync-report.md`.
+
+    ## Conventions
+
+    `.claude/rules/openapi.md`: camelCase як живий дріт, шляхи без версії,
+    value objects з `shared/` своїми полями (`Money {amount, currency}`), курс — рядком,
+    `code` = `<bc>.<snake(Sentinel)>`, `ApiKeyAuth`.
+
+servers:
+  - url: http://localhost:3000
+    description: Local (single-user, 127.0.0.1)
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: trips
+    description: Поїздка і її base currency (BC trips)
+  - name: expenses
+    description: Витрати, курси і підсумок (BC expenses)
+
+paths:
+  /trips:
+    post:
+      tags: [trips]
+      summary: Створити поїздку (опційно — одразу з base currency)
+      description: |
+        As-built ендпойнт; фіча додає лише необов'язкову `baseCurrency` (sad.md §5,
+        `CreateTrip`). Без неї поїздка створюється як раніше, `baseCurrency: null`.
+      operationId: createTrip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTripRequest"
+            example:
+              title: Test Trip
+              country: PT
+              startsAt: "2026-10-01"
+              endsAt: "2026-10-15"
+              baseCurrency: EUR
+      responses:
+        "201":
+          description: Поїздку створено.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+              example:
+                id: 00000000-0000-4000-8000-000000000001
+                title: Test Trip
+                country: PT
+                startsAt: "2026-10-01T00:00:00.000Z"
+                endsAt: "2026-10-15T00:00:00.000Z"
+                status: planned
+                baseCurrency: EUR
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /trips/{tripId}/base-currency:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    put:
+      tags: [trips]
+      summary: Задати або змінити base currency поїздки
+      description: |
+        Перше задання дозволене завжди. Зміну вже заданої валюти блокує хоча б одна
+        витрата з ЯВНИМ rate snapshot (`RatedExpensesPort`); похідний курс 1 лок не
+        тримає (AC-07, ADR-0003/0004). Після зміни витрати у старій валюті стають
+        «без курсу» і видні в лічильнику. Статус поїздки не перевіряється.
+      operationId: setTripBaseCurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetBaseCurrencyRequest"
+            example:
+              baseCurrency: EUR
+      responses:
+        "200":
+          description: Base currency збережено.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+              example:
+                id: 00000000-0000-4000-8000-000000000001
+                title: Test Trip
+                country: PT
+                startsAt: "2026-10-01T00:00:00.000Z"
+                endsAt: "2026-10-15T00:00:00.000Z"
+                status: active
+                baseCurrency: EUR
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/TripDoesNotExist"
+        "409":
+          $ref: "#/components/responses/BaseCurrencyLocked"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /trips/{tripId}/expenses:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    post:
+      tags: [expenses]
+      summary: Додати витрату — з курсом, без курсу або у base currency
+      description: |
+        `rate` необов'язковий. Для витрати у base currency поле не потрібне — курс 1
+        похідний на читанні і не зберігається (AC-06, ADR-0003), тож у відповіді
+        `expense.rate: null`, а витрата вже counted у `budget`. Курс при поїздці без
+        base currency — 422 `expenses.base_currency_not_set`. Витрата приймається
+        навіть з перевищенням budget — overspend лише сигнал у `budget` (Invariants).
+      operationId: addExpense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddExpenseRequest"
+            examples:
+              foreign_with_rate:
+                summary: Чужа валюта з курсом до base currency
+                value:
+                  amount: 150000
+                  currency: CZK
+                  category: food
+                  spentAt: "2026-10-03"
+                  rate: "0.039800000"
+              base_currency:
+                summary: Витрата у base currency — курс не питається
+                value:
+                  amount: 4500
+                  currency: EUR
+                  category: transport
+                  spentAt: "2026-10-03"
+      responses:
+        "201":
+          description: Витрату прийнято.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddExpenseResponse"
+              examples:
+                with_rate_and_budget:
+                  value:
+                    expense:
+                      id: 00000000-0000-4000-8000-0000000000e1
+                      tripId: 00000000-0000-4000-8000-000000000001
+                      amount: { amount: 150000, currency: CZK }
+                      category: food
+                      spentAt: "2026-10-03T00:00:00.000Z"
+                      rate: "0.039800000"
+                    budget:
+                      budget: { amount: 100000, currency: EUR }
+                      remaining: { amount: -1470, currency: EUR }
+                      counted: 8
+                      uncounted: 1
+                      overspend: true
+                no_base_currency:
+                  value:
+                    expense:
+                      id: 00000000-0000-4000-8000-0000000000e2
+                      tripId: 00000000-0000-4000-8000-000000000002
+                      amount: { amount: 1200, currency: UAH }
+                      category: transport
+                      spentAt: "2026-10-04T00:00:00.000Z"
+                      rate: null
+                    budget: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ExpenseTripNotFound"
+        "409":
+          $ref: "#/components/responses/TripNotAcceptingExpenses"
+        "422":
+          $ref: "#/components/responses/RateRejected"
+
+  /expenses/{expenseId}/rate:
+    parameters:
+      - $ref: "#/components/parameters/ExpenseId"
+    put:
+      tags: [expenses]
+      summary: Замінити курс на збереженій витраті
+      description: |
+        Сума й валюта введення не змінюються — міняється лише rate snapshot (Invariants).
+        Попереднє значення ніде не зберігається (AC-05). Статус поїздки НЕ перевіряється:
+        finished блокує нові витрати, не атрибути наявних (AC-08) — тому 409 тут немає.
+        Шлях без `tripId`: `SetExpenseRate(expenseId, rate)` поїздки не приймає.
+      operationId: setExpenseRate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetExpenseRateRequest"
+            example:
+              rate: "0.039750000"
+      responses:
+        "200":
+          description: Курс замінено; converted total і залишок перераховуються на читанні.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+              example:
+                id: 00000000-0000-4000-8000-0000000000e1
+                tripId: 00000000-0000-4000-8000-000000000001
+                amount: { amount: 150000, currency: CZK }
+                category: food
+                spentAt: "2026-10-03T00:00:00.000Z"
+                rate: "0.039750000"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ExpenseNotFound"
+        "422":
+          $ref: "#/components/responses/RateRejected"
+
+  /trips/{tripId}/summary:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    get:
+      tags: [expenses]
+      summary: Підсумок — сирі суми, converted total, лічильник без курсу, залишок
+      description: |
+        `lines` — сирі суми по (категорія, валюта), як і раніше. `converted` — Σ
+        `Rate.apply(amount)` (half-up, minor units) по витратах з ефективним курсом;
+        `null`, поки у поїздки немає base currency. `budget` — та сама BudgetBlock:
+        remaining рахується з тієї ж Σ, тож `converted.withoutRate === budget.uncounted`
+        (ADR-0003). Дрібні курси не округлюються в нуль (AC-03b, шкала 10⁹).
+      operationId: getTripSummary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripSummary"
+              examples:
+                converted_and_budget:
+                  value:
+                    lines:
+                      - category: food
+                        currency: CZK
+                        total: { amount: 150000, currency: CZK }
+                      - category: food
+                        currency: EUR
+                        total: { amount: 95500, currency: EUR }
+                      - category: transport
+                        currency: HUF
+                        total: { amount: 800000, currency: HUF }
+                    converted:
+                      total: { amount: 101470, currency: EUR }
+                      withoutRate: 1
+                    budget:
+                      budget: { amount: 100000, currency: EUR }
+                      remaining: { amount: -1470, currency: EUR }
+                      counted: 8
+                      uncounted: 1
+                      overspend: true
+                no_base_currency:
+                  value:
+                    lines:
+                      - category: transport
+                        currency: UAH
+                        total: { amount: 1200, currency: UAH }
+                    converted: null
+                    budget: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Owner-ключ з `API_KEY` (trip-budget sad.md §8). Перевіряється до будь-якого читання сховища; 401 однаковий для наявного й неіснуючого ресурсу.
+
+  parameters:
+    TripId:
+      in: path
+      name: tripId
+      required: true
+      description: Id поїздки — legacy `trips.id TEXT` з `randomUUID()` (v4).
+      schema:
+        type: string
+        format: uuid
+    ExpenseId:
+      in: path
+      name: expenseId
+      required: true
+      description: Id витрати — legacy `expenses.id TEXT` з `randomUUID()` (v4).
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CurrencyCode:
+      type: string
+      description: ISO 4217, верхній регістр; патерн замість довідника (trip-budget sad.md §8).
+      pattern: "^[A-Z]{3}$"
+      minLength: 3
+      maxLength: 3
+      examples: [EUR]
+
+    Money:
+      type: object
+      additionalProperties: false
+      description: "`shared/Money` — ціле невід'ємне в minor units + валюта. Буває сумою (підсумки), тож межа — JS safe integer."
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    Balance:
+      type: object
+      additionalProperties: false
+      description: "`shared/Balance` (trip-budget ADR-0004) — знакове ціле в minor units + валюта."
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    Rate:
+      type: string
+      description: |
+        `shared/Rate` (ADR-0002) — курс до base currency: додатний десятковий рядок,
+        ≤ 9 знаків до і після коми (`rate_nano BIGINT` = значення × 10⁹, CHECK > 0).
+        Рядок, не JSON number: float дає `1e-7`, і `Rate.parse` зламався б на валідному вводі.
+      pattern: "^(?!0+(\\.0+)?$)(0|[1-9][0-9]{0,8})(\\.[0-9]{1,9})?$"
+      examples: ["0.039800000"]
+
+    ExpenseCategory:
+      type: string
+      enum: [transport, lodging, food, tickets, other]
+
+    TripStatus:
+      type: string
+      enum: [planned, active, finished]
+
+    CreateTripRequest:
+      type: object
+      additionalProperties: false
+      required: [title, country, startsAt, endsAt]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        country:
+          type: string
+          minLength: 1
+        startsAt:
+          type: string
+          format: date
+        endsAt:
+          type: string
+          format: date
+          description: Не раніше `startsAt` (as-built zod refine + `trips` CHECK).
+        baseCurrency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    SetBaseCurrencyRequest:
+      type: object
+      additionalProperties: false
+      required: [baseCurrency]
+      properties:
+        baseCurrency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    Trip:
+      type: object
+      additionalProperties: false
+      description: |
+        As-built поля `Trip` + `baseCurrency`. Потребує presenter-а: серіалізація класу
+        віддала б і `budget` з trip-budget (flag F4).
+      required: [id, title, country, startsAt, endsAt, status, baseCurrency]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        country:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+          description: As-built — `Date` серіалізується як ISO date-time, хоча в БД `DATE` (flag F5).
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/TripStatus"
+        baseCurrency:
+          oneOf:
+            - $ref: "#/components/schemas/CurrencyCode"
+            - type: "null"
+
+    AddExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, category, spentAt]
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: Minor units (as-built поле; `expenses.amount_minor INTEGER`).
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        spentAt:
+          type: string
+          format: date
+        rate:
+          $ref: "#/components/schemas/Rate"
+
+    SetExpenseRateRequest:
+      type: object
+      additionalProperties: false
+      required: [rate]
+      properties:
+        rate:
+          $ref: "#/components/schemas/Rate"
+
+    Expense:
+      type: object
+      additionalProperties: false
+      required: [id, tripId, amount, category, spentAt, rate]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Money"
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        spentAt:
+          type: string
+          format: date-time
+          description: As-built — ISO date-time з `Date`.
+        rate:
+          description: Явний rate snapshot або `null`. Для витрати у base currency — `null`; курс 1 похідний і видно його лише через counted (ADR-0003).
+          oneOf:
+            - $ref: "#/components/schemas/Rate"
+            - type: "null"
+
+    BudgetBlock:
+      type: object
+      additionalProperties: false
+      description: |
+        trip-budget ADR-0002/0003 — одна форма у двох відповідях. Семантика counted
+        змінена ADR-0003 цієї фічі: counted = має ефективний курс (явний або 1 для
+        base currency), Σ — у перерахованих сумах.
+      required: [budget, remaining, counted, uncounted, overspend]
+      properties:
+        budget:
+          $ref: "#/components/schemas/Money"
+        remaining:
+          $ref: "#/components/schemas/Balance"
+        counted:
+          type: integer
+          minimum: 0
+        uncounted:
+          type: integer
+          minimum: 0
+          description: Витрати без ефективного курсу; дорівнює `converted.withoutRate`.
+        overspend:
+          type: boolean
+
+    ConvertedTotal:
+      type: object
+      additionalProperties: false
+      description: "sad.md §5 `converted: { total, withoutRate }` (ADR-0003)."
+      required: [total, withoutRate]
+      properties:
+        total:
+          $ref: "#/components/schemas/Money"
+        withoutRate:
+          type: integer
+          minimum: 0
+          description: Кількість витрат поза перерахунком (AC-04).
+
+    SummaryLine:
+      type: object
+      additionalProperties: false
+      description: As-built `TripSummaryLine` — сирі суми без перерахунку.
+      required: [category, currency, total]
+      properties:
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+        total:
+          $ref: "#/components/schemas/Money"
+
+    AddExpenseResponse:
+      type: object
+      additionalProperties: false
+      required: [expense, budget]
+      properties:
+        expense:
+          $ref: "#/components/schemas/Expense"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/BudgetBlock"
+            - type: "null"
+
+    TripSummary:
+      type: object
+      additionalProperties: false
+      required: [lines, converted, budget]
+      properties:
+        lines:
+          type: array
+          description: Агрегат (≤ 5 категорій × валюти поїздки), не колекція сутностей — без пагінації.
+          items:
+            $ref: "#/components/schemas/SummaryLine"
+        converted:
+          oneOf:
+            - $ref: "#/components/schemas/ConvertedTotal"
+            - type: "null"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/BudgetBlock"
+            - type: "null"
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [path, message]
+      properties:
+        path:
+          type: string
+          description: Шлях до поля через крапку (з zod `issue.path`).
+        message:
+          type: string
+
+    ErrorDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "`<bc>.<snake(Sentinel)>`, bc ∈ trips | expenses | shared | http."
+          pattern: "^(trips|expenses|shared|http)\\.[a-z][a-z0-9_]*$"
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+  responses:
+    Unauthorized:
+      description: Ключа немає або він не збігається (перевірка до сховища).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: http.unauthorized
+            message: Unauthorized
+
+    ValidationFailed:
+      description: Тіло не пройшло zod-валідацію.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: http.validation_failed
+            message: Request body is invalid
+            details:
+              issues:
+                - path: baseCurrency
+                  message: Invalid string
+
+    RateRejected:
+      description: |
+        422 з двома кодами: форма (`http.validation_failed` — у т.ч. нульовий або
+        від'ємний курс, AC-02) або курс для поїздки без base currency
+        (`expenses.base_currency_not_set` — `BaseCurrencyNotSetError`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            zero_rate:
+              value:
+                code: http.validation_failed
+                message: Request body is invalid
+                details:
+                  issues:
+                    - path: rate
+                      message: Rate must be a positive decimal with at most 9 fraction digits
+            base_currency_not_set:
+              value:
+                code: expenses.base_currency_not_set
+                message: Set the trip base currency before adding a rate
+
+    ExpenseTripNotFound:
+      description: "`TripNotFoundError` (BC expenses) — поїздки немає (as-built)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: expenses.trip_not_found
+            message: Trip not found
+
+    TripNotAcceptingExpenses:
+      description: "`TripNotAcceptingExpensesError` — поїздка finished (CONTEXT Invariants)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: expenses.trip_not_accepting_expenses
+            message: Trip is not accepting expenses
+
+    ExpenseNotFound:
+      description: "`ExpenseNotFoundError` — витрати немає (flow 3)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: expenses.expense_not_found
+            message: Expense not found
+
+    TripDoesNotExist:
+      description: "`TripDoesNotExistError` (BC trips, trip-budget sad.md §5) — поїздки немає."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: trips.trip_does_not_exist
+            message: Trip not found
+
+    BaseCurrencyLocked:
+      description: "`BaseCurrencyLockedError` — є витрати з явним rate snapshot (AC-07)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: trips.base_currency_locked
+            message: Base currency is locked while expenses have explicit rates
