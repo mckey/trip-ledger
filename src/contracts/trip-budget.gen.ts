@@ -153,6 +153,11 @@ export interface components {
         TripBudget: {
             base_currency: components["schemas"]["CurrencyCode"];
             budget_minor: number;
+            /**
+             * Format: date-time
+             * @description Коли budget востаннє задано або замінено (trips.budget_set_at). Не журнал — одне значення (PRD §3).
+             */
+            budget_set_at: string;
             /** Format: uuid */
             trip_id: string;
         };
@@ -294,7 +299,8 @@ export interface operations {
                      * @example {
                      *       "trip_id": "00000000-0000-4000-8000-000000000001",
                      *       "budget_minor": 5000000,
-                     *       "base_currency": "EUR"
+                     *       "base_currency": "EUR",
+                     *       "budget_set_at": "2026-10-01T08:30:00Z"
                      *     }
                      */
                     "application/json": components["schemas"]["TripBudget"];

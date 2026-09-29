@@ -12,6 +12,7 @@ export const setTripBudgetOk = {
   trip_id: TRIP_ID,
   budget_minor: 5_000_000,
   base_currency: 'EUR',
+  budget_set_at: '2026-10-01T08:30:00Z',
 } satisfies Json<'setTripBudget', 200>;
 
 export const addExpenseOverspend = {

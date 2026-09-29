@@ -84,6 +84,7 @@ paths:
                 trip_id: 00000000-0000-4000-8000-000000000001
                 budget_minor: 5000000
                 base_currency: EUR
+                budget_set_at: "2026-10-01T08:30:00Z"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -249,7 +250,7 @@ components:
     TripBudget:
       type: object
       additionalProperties: false
-      required: [trip_id, budget_minor, base_currency]
+      required: [trip_id, budget_minor, base_currency, budget_set_at]
       properties:
         trip_id:
           type: string
@@ -260,6 +261,11 @@ components:
           maximum: 2147483647
         base_currency:
           $ref: "#/components/schemas/CurrencyCode"
+        budget_set_at:
+          # unused-in-prd: trips.budget_set_at є в data-model.md, story в PRD немає (див. api-sync-report F7)
+          type: string
+          format: date-time
+          description: Коли budget востаннє задано або замінено (trips.budget_set_at). Не журнал — одне значення (PRD §3).
 
     AddExpenseRequest:
       type: object
