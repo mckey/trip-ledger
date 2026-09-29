@@ -23,3 +23,11 @@ export interface TripStatusPort {
   exists(tripId: string): Promise<boolean>;
   canAcceptExpenses(tripId: string): Promise<boolean>;
 }
+
+/**
+ * Порт до BC trips: читає budget поїздки, окремо від TripStatusPort (ADR-0002).
+ * `null` — у поїздки ще не встановлено budget.
+ */
+export interface TripBudgetPort {
+  budget(tripId: string): Promise<{ amount: Money } | null>;
+}

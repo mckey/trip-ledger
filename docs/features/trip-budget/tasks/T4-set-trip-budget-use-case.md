@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-02", "AC-07", "AC-09"]
 files_hint: ["src/trips/application/SetTripBudget.ts", "src/trips/application/SetTripBudget.test.ts"]
 owner: "Vladimir Makarov"
 estimate: "S"
-status: "todo"
+status: "review"
 ---
 
 # T4 — Додати use case SetTripBudget у BC trips
