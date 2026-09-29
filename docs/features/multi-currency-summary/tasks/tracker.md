@@ -15,7 +15,7 @@ updated_at: 2026-09-29
 | [TRP-1](./TRP-1-trip-base-currency-lock.md) | 1 | done | — | — | trip-budget:T2 | M |
 | [MIG-1](./MIG-1-promote-rate-snapshot-migration.md) | 1 | todo | — | — | trip-budget:T3 | S |
 | [EXP-1](./EXP-1-expense-rate-attribute-and-ports.md) | 2 | todo | — | SHR-1 | trip-budget:T6, trip-budget:T8 | L |
-| [TRP-2](./TRP-2-set-trip-base-currency-use-case.md) | 2 | todo | — | TRP-1 | — | S |
+| [TRP-2](./TRP-2-set-trip-base-currency-use-case.md) | 2 | done | — | TRP-1 | — | S |
 | [EXP-4](./EXP-4-converted-total-in-budget-block.md) | 3 | todo | — | SHR-1, EXP-1 | trip-budget:T6 | L |
 | [EXP-5](./EXP-5-expense-repositories-rate-mapping.md) | 3 | todo | — | EXP-1, MIG-1 | — | M |
 | [EXP-2](./EXP-2-add-expense-with-optional-rate.md) | 3 | todo | — | EXP-1 | trip-budget:T6 | S |
