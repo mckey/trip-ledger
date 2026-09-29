@@ -1,0 +1,475 @@
+openapi: 3.1.0
+info:
+  title: trip-ledger — trip-budget API
+  version: 0.1.0
+  contact:
+    name: trip-ledger (pet project)
+    url: https://github.com/mckey/trip-ledger
+  description: |
+    Зовнішній контракт фічі trip-budget. Стадія API contracts, згенеровано
+    `api-forge` (sdlc plugin), сценарій A — data-model.md є.
+
+    Навіщо цей API (idea-brief §13, Approach A): у поїздки з'являється планова
+    стеля витрат однією сумою в base currency; залишок (remaining) і лічильник
+    неврахованих витрат живуть у підсумку, а overspend signal приходить прямо
+    у відповіді на додавання витрати — щоб перевитрату було видно в поїздці,
+    а не вдома постфактум (PRD §1).
+
+    ## Scope
+
+    - `PUT /trips/{trip_id}/budget` — NEW (US-01, US-05, US-06).
+    - `POST /trips/{trip_id}/expenses` — CHANGED: відповідь стає envelope
+      `{expense, budget}` (ADR-0003).
+    - `GET /trips/{trip_id}/summary` — CHANGED: відповідь з масиву стає
+      об'єктом `{lines, budget}` (ADR-0002).
+
+    Інші ендпойнти trip-ledger у цей контракт не входять — фіча їх не чіпає.
+
+    ## Sources of truth
+
+    PRD.md (§4 US, §5 AC, §6.1) · data-model.md (`trips`, `expenses`) ·
+    sad.md §6 (flows 1–3 + cross-cutting AC-08) · adr/0001–0004 · idea-brief.md.
+    Походження кожного поля — `api-sync-report.md` поруч.
+
+    ## Conventions
+
+    Дефолти `.claude/rules/openapi.md`: URL-версіонування `/api/v1`,
+    `BearerAuth` глобально (токен — owner-ключ з `API_KEY`, sad.md §8),
+    помилки `{code, message, details?}` з `code` = `<module>.<error_name>`.
+    Відхилення від дефолтів і розбіжності з наявним кодом — у звіті.
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local (single-user, слухає лише 127.0.0.1 — sad.md §8)
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: budget
+    description: Budget поїздки (BC trips)
+  - name: expenses
+    description: Витрати й підсумок поїздки (BC expenses)
+
+paths:
+  /trips/{trip_id}/budget:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    put:
+      tags: [budget]
+      summary: Задати або замінити budget поїздки
+      description: |
+        Перше задання фіксує base currency поїздки; заміна можлива лише в тій
+        самій валюті (AC-02). Значення перезаписується без журналу (AC-07).
+        Дозволено в будь-якому статусі поїздки, включно з `finished` (AC-09).
+        PUT ідемпотентний за семантикою — `Idempotency-Key` не потрібен.
+      operationId: setTripBudget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetBudgetRequest"
+            example:
+              budget_minor: 5000000
+              base_currency: EUR
+      responses:
+        "200":
+          description: Budget збережено; підсумок відтепер показує блок залишку (AC-01).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripBudget"
+              example:
+                trip_id: 00000000-0000-4000-8000-000000000001
+                budget_minor: 5000000
+                base_currency: EUR
+                budget_set_at: "2026-10-01T08:30:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/TripNotFound"
+        "422":
+          $ref: "#/components/responses/BudgetRejected"
+
+  /trips/{trip_id}/expenses:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    post:
+      tags: [expenses]
+      summary: Додати витрату й отримати overspend signal
+      description: |
+        Витрата приймається завжди, навіть якщо перевищує budget — budget
+        ніколи не блокує (CONTEXT Invariants, AC-04). Overspend — не помилка,
+        а `budget.overspend: true` у тілі відповіді 201 (ADR-0003).
+        `budget: null`, якщо budget поїздки не задано.
+      operationId: addExpense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddExpenseRequest"
+            example:
+              amount_minor: 4500
+              currency_code: EUR
+              category: food
+              spent_at: "2026-10-03"
+      responses:
+        "201":
+          description: Витрату прийнято; блок budget обчислено тією ж BudgetBlock, що й у підсумку.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddExpenseResponse"
+              examples:
+                overspend:
+                  summary: Budget перевищено — сигнал у тій самій відповіді
+                  value:
+                    expense:
+                      id: 00000000-0000-4000-8000-0000000000e1
+                      trip_id: 00000000-0000-4000-8000-000000000001
+                      amount_minor: 4500
+                      currency_code: EUR
+                      category: food
+                      spent_at: "2026-10-03"
+                    budget:
+                      budget_minor: 100000
+                      base_currency: EUR
+                      remaining_minor: -2500
+                      counted: 7
+                      uncounted: 2
+                      overspend: true
+                no_budget:
+                  summary: Budget не задано
+                  value:
+                    expense:
+                      id: 00000000-0000-4000-8000-0000000000e2
+                      trip_id: 00000000-0000-4000-8000-000000000002
+                      amount_minor: 1200
+                      currency_code: UAH
+                      category: transport
+                      spent_at: "2026-10-04"
+                    budget: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/TripNotFound"
+        "409":
+          $ref: "#/components/responses/TripNotAcceptingExpenses"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /trips/{trip_id}/summary:
+    parameters:
+      - $ref: "#/components/parameters/TripId"
+    get:
+      tags: [expenses]
+      summary: Підсумок поїздки з блоком залишку
+      description: |
+        `lines` — агрегат по (категорія, валюта), як і раніше. `budget` — той
+        самий блок, що у відповіді додавання витрати, або `null`, якщо budget
+        не задано. Від'ємний `remaining_minor` показується від'ємним (AC-03b);
+        якщо всі витрати чужовалютні — `remaining_minor` дорівнює повному
+        budget, а `uncounted` — кількості всіх витрат (AC-06b).
+      operationId: getTripSummary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripSummary"
+              example:
+                lines:
+                  - category: food
+                    currency_code: EUR
+                    total_minor: 102500
+                  - category: transport
+                    currency_code: UAH
+                    total_minor: 340000
+                budget:
+                  budget_minor: 100000
+                  base_currency: EUR
+                  remaining_minor: -2500
+                  counted: 7
+                  uncounted: 2
+                  overspend: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Owner-ключ з `API_KEY` (.env). Перевіряється до будь-якого читання сховища (AC-08).
+
+  parameters:
+    TripId:
+      in: path
+      name: trip_id
+      required: true
+      description: Id поїздки — UUID v4 з застосунку (legacy `trips.id TEXT`).
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CurrencyCode:
+      type: string
+      description: Код ISO 4217 у верхньому регістрі (sad.md §8; повного довідника у v1 немає — патерн).
+      pattern: "^[A-Z]{3}$"
+      minLength: 3
+      maxLength: 3
+      examples: [EUR]
+
+    MinorAmount:
+      type: integer
+      description: Невід'ємна сума в мінорних одиницях (`Money`, INTEGER у БД).
+      minimum: 0
+      maximum: 2147483647
+
+    ExpenseCategory:
+      type: string
+      enum: [transport, lodging, food, tickets, other]
+
+    SetBudgetRequest:
+      type: object
+      additionalProperties: false
+      required: [budget_minor, base_currency]
+      properties:
+        budget_minor:
+          type: integer
+          description: Додатна сума budget у мінорних одиницях (AC-02 — нуль і від'ємні відхиляються).
+          minimum: 1
+          maximum: 2147483647
+        base_currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    TripBudget:
+      type: object
+      additionalProperties: false
+      required: [trip_id, budget_minor, base_currency, budget_set_at]
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        budget_minor:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        base_currency:
+          $ref: "#/components/schemas/CurrencyCode"
+        budget_set_at:
+          # unused-in-prd: trips.budget_set_at є в data-model.md, story в PRD немає (див. api-sync-report F7)
+          type: string
+          format: date-time
+          description: Коли budget востаннє задано або замінено (trips.budget_set_at). Не журнал — одне значення (PRD §3).
+
+    AddExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [amount_minor, currency_code, category, spent_at]
+      properties:
+        amount_minor:
+          $ref: "#/components/schemas/MinorAmount"
+        currency_code:
+          $ref: "#/components/schemas/CurrencyCode"
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        spent_at:
+          type: string
+          format: date
+
+    Expense:
+      type: object
+      additionalProperties: false
+      required: [id, trip_id, amount_minor, currency_code, category, spent_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        amount_minor:
+          $ref: "#/components/schemas/MinorAmount"
+        currency_code:
+          $ref: "#/components/schemas/CurrencyCode"
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        spent_at:
+          type: string
+          format: date
+
+    BudgetBlock:
+      type: object
+      additionalProperties: false
+      description: Результат чистої функції BudgetBlock (ADR-0002) — одна форма у двох відповідях (ADR-0003).
+      required: [budget_minor, base_currency, remaining_minor, counted, uncounted, overspend]
+      properties:
+        budget_minor:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        base_currency:
+          $ref: "#/components/schemas/CurrencyCode"
+        remaining_minor:
+          type: integer
+          description: budget − Σ counted у мінорних одиницях; може бути від'ємним (Balance, ADR-0004; AC-03b).
+        counted:
+          type: integer
+          minimum: 0
+          description: Кількість витрат у base currency, що увійшли в порівняння.
+        uncounted:
+          type: integer
+          minimum: 0
+          description: Кількість витрат в інших валютах — у порівняння не увійшли (AC-06, AC-06b).
+        overspend:
+          type: boolean
+          description: "`true`, якщо remaining_minor < 0. Сигнал, не заборона."
+
+    AddExpenseResponse:
+      type: object
+      additionalProperties: false
+      required: [expense, budget]
+      properties:
+        expense:
+          $ref: "#/components/schemas/Expense"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/BudgetBlock"
+            - type: "null"
+
+    SummaryLine:
+      type: object
+      additionalProperties: false
+      required: [category, currency_code, total_minor]
+      properties:
+        category:
+          $ref: "#/components/schemas/ExpenseCategory"
+        currency_code:
+          $ref: "#/components/schemas/CurrencyCode"
+        total_minor:
+          type: integer
+          minimum: 0
+          description: Σ amount_minor витрат цієї категорії в цій валюті.
+
+    TripSummary:
+      type: object
+      additionalProperties: false
+      required: [lines, budget]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryLine"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/BudgetBlock"
+            - type: "null"
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [path, message]
+      properties:
+        path:
+          type: string
+          description: Шлях до поля в тілі запиту, через крапку (`budget_minor`).
+        message:
+          type: string
+
+    ErrorDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "`<module>.<error_name>`, snake_case."
+          examples: [trip.not_found]
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+  responses:
+    Unauthorized:
+      description: |
+        Ключа немає або він не збігається. Відповідь однакова для наявної і
+        неіснуючої поїздки — сховище не зачеплено (AC-08, sad.md §6 cross-cutting).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: auth.unauthorized
+            message: Unauthorized
+
+    TripNotFound:
+      description: Поїздки з таким id немає.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: trip.not_found
+            message: Trip not found
+
+    TripNotAcceptingExpenses:
+      description: Поїздка у статусі finished — витрати не приймаються (CONTEXT Invariants).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: trip.not_accepting_expenses
+            message: Trip is finished and does not accept expenses
+
+    ValidationFailed:
+      description: Тіло запиту не пройшло валідацію форми.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: validation.invalid_payload
+            message: Request body is invalid
+            details:
+              issues:
+                - path: currency_code
+                  message: must match ^[A-Z]{3}$
+
+    BudgetRejected:
+      description: |
+        Два коди з одним статусом 422: невалідна форма (`validation.invalid_payload`)
+        або валюта не збігається з уже зафіксованою base currency поїздки
+        (`budget.currency_mismatch`) — AC-02.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            invalid_payload:
+              value:
+                code: validation.invalid_payload
+                message: Request body is invalid
+                details:
+                  issues:
+                    - path: budget_minor
+                      message: must be >= 1
+            currency_mismatch:
+              value:
+                code: budget.currency_mismatch
+                message: Budget must be set in the trip base currency (EUR)

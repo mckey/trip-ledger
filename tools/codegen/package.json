@@ -1,0 +1,10 @@
+{
+  "name": "trip-ledger-codegen",
+  "private": true,
+  "description": "Isolated OpenAPI codegen toolchain: openapi-typescript needs the TypeScript 5 JS compiler API (ts.factory), which the native TypeScript 7 in the root project does not ship.",
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.15.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

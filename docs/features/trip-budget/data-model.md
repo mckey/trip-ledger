@@ -2,7 +2,7 @@
 status: Draft
 owner: "Vladimir Makarov"
 reviewers: []
-updated_at: "2026-09-28"
+updated_at: "2026-09-29"
 feature_size: S
 stage: "07"
 ticket: "-"
@@ -31,6 +31,7 @@ erDiagram
         text status "legacy CHECK planned|active|finished"
         integer budget_minor "NEW nullable, ADR-0001"
         varchar base_currency "NEW nullable VARCHAR(3)"
+        timestamptz budget_set_at "NEW nullable, коли budget востаннє задано"
     }
     EXPENSES {
         text id PK "UUID v4 з застосунку (legacy TEXT)"
@@ -54,10 +55,11 @@ erDiagram
 | `status` | TEXT | NOT NULL, legacy `DEFAULT 'planned'` + CHECK | legacy, без змін (див. аудит — розходження з course defaults) |
 | `budget_minor` | INTEGER | NULL | **new.** Мінорні одиниці, той самий тип що `expenses.amount_minor`; `NULL` = budget не задано. Правило «> 0» — у `Trip.setBudget()` + zod, не в БД |
 | `base_currency` | VARCHAR(3) | NULL | **new.** ISO 4217; фіксується першим заданням budget (ADR-0001). Правило «разом з budget» — у домені |
+| `budget_set_at` | TIMESTAMPTZ | NULL | **new (2026-09-29).** Коли budget востаннє задано або замінено; пишеться разом з `budget_minor` у `Trip.setBudget()`. `NULL` = budget не задано. Одне значення, не журнал (PRD §3) — правило `.claude/rules/migrations.md` «`<attr>_set_at` замість `updated_at`» |
 
 **Aggregate root:** root. Budget — атрибут поїздки без власного життєвого циклу (ADR-0001), окремої таблиці немає.
 **Access patterns:** читання/запис по `id` (flow 1 «знайти поїздку», «зберегти поїздку (upsert)»; `TripBudgetPort` у flows 2, 3) → PK.
-**Constraints:** нових немає — course default забороняє CHECK, тож обидва CHECK з Accepted ADR-0001 (`budget_minor > 0`, парність budget/base currency) тут не згенеровані (розходження — в аудиті). `updated_at` свідомо не додано: заміна budget перезаписує значення без журналу (PRD §3, AC-07), вимоги «коли змінено» у PRD немає.
+**Constraints:** нових немає — course default забороняє CHECK, тож обидва CHECK з Accepted ADR-0001 (`budget_minor > 0`, парність budget/base currency) тут не згенеровані (розходження — в аудиті). `updated_at` свідомо не додано: заміна budget перезаписує значення без журналу (PRD §3, AC-07). `budget_set_at` — не журнал, а момент останнього задання: ретроспектива US-06 («коли я задав планку — до старту чи посеред поїздки?»). У PRD окремої story під нього немає — зворотний порт у PRD за рішенням owner-а.
 
 > **Back-port (2026-09-28, прогін schema-forge на multi-currency-summary):** CHECK-и бюджету повернуто в дозволеній формі staged-міграцією `docs/features/multi-currency-summary/migrations/20260928140100000_add_budget_checks_to_trips.sql` — `budget_minor >= 0` (дзеркало `Money`) і `budget_minor IS NULL OR base_currency IS NOT NULL` (ADR-0004 multi-currency-summary). Промотувати її **одним деплоєм** з `20260928120000_add_budget_to_trips`, щоб колонки не жили в проді без CHECK. Рішення щодо `> 0` — Amendment у [ADR-0001](./adr/0001-budget-as-columns-on-trips.md).
 

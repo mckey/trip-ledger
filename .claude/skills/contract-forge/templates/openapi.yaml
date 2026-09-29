@@ -1,0 +1,195 @@
+openapi: 3.1.0
+info:
+  title: <repo> — <slug> API
+  version: 0.1.0
+  contact:
+    name: <repo>
+    url: <repo url>
+  description: |
+    Контракт фічі <slug>. Згенеровано `contract-forge`, сценарій <A|B>.
+
+    <Навіщо цей API — один абзац з idea-brief / PRD §1.>
+
+    ## Scope
+
+    - `<METHOD> <path>` — NEW | CHANGED (<US / AC>; <ADR-NNNN>).
+
+    ## Sources of truth
+
+    PRD.md · sad.md §5 «Контракти», §6 flows, §8 · adr/ · data-model.md · CONTEXT.md ·
+    живі роутери (<файли>). Походження кожного поля — `api-sync-report.md`.
+
+    ## Conventions
+
+    `.claude/rules/openapi.md`: camelCase як живий дріт, шляхи без версії,
+    value objects з `shared/` своїми полями, курс/десяткові — рядком,
+    `code` = `<bc>.<snake(Sentinel)>`, `ApiKeyAuth`.
+
+servers:
+  - url: http://localhost:<PORT>
+    description: Local (single-user)
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: <bc>
+    description: <що в цьому BC>
+
+paths:
+  /<resource>/{<resourceId>}:
+    parameters:
+      - $ref: "#/components/parameters/<Resource>Id"
+    put:
+      tags: [<bc>]
+      summary: <дія одним реченням>
+      description: |
+        <інваріанти й AC, які операція тримає; чому саме цей метод>
+      operationId: <useCaseName>
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/<UseCase>Request"
+            example: {}
+      responses:
+        "200":
+          description: <що підтверджує>
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/<Resource>"
+              example: {}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/<Resource>NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Owner-ключ з `API_KEY`. Перевіряється до будь-якого читання сховища; 401 однаковий для наявного і неіснуючого ресурсу.
+
+  parameters:
+    <Resource>Id:
+      in: path
+      name: <resourceId>
+      required: true
+      description: <legacy TEXT + randomUUID() v4 | UUID з застосунку>
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CurrencyCode:
+      type: string
+      description: ISO 4217, верхній регістр; патерн замість довідника.
+      pattern: "^[A-Z]{3}$"
+      minLength: 3
+      maxLength: 3
+      examples: [EUR]
+
+    Money:
+      type: object
+      additionalProperties: false
+      description: "`shared/Money` — ціле невід'ємне в minor units + валюта. Буває сумою (підсумки), тож межа — JS safe integer, не INTEGER колонки; межу INTEGER тримають поля запиту."
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    Balance:
+      type: object
+      additionalProperties: false
+      description: "`shared/Balance` — знакове ціле в minor units + валюта."
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    Rate:
+      type: string
+      description: "`shared/Rate` — додатний десятковий рядок, ≤ <N> знаків після коми (ADR-<NNNN>). Не JSON number: float дає `1e-7`."
+      pattern: "^(?!0+(\\.0+)?$)(0|[1-9][0-9]{0,8})(\\.[0-9]{1,<N>})?$"
+      examples: ["0.912300000"]
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [path, message]
+      properties:
+        path:
+          type: string
+          description: Шлях до поля через крапку (з zod `issue.path`).
+        message:
+          type: string
+
+    ErrorDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "`<bc>.<snake(Sentinel)>`, bc ∈ trips | expenses | shared | http."
+          pattern: "^(trips|expenses|shared|http)\\.[a-z][a-z0-9_]*$"
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+  responses:
+    Unauthorized:
+      description: Ключа немає або він не збігається (перевірка до сховища).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: http.unauthorized
+            message: Unauthorized
+
+    ValidationFailed:
+      description: Тіло або параметри не пройшли zod-валідацію.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: http.validation_failed
+            message: Request body is invalid
+            details:
+              issues:
+                - path: <field>
+                  message: <zod message>
+
+    <Resource>NotFound:
+      description: <Sentinel>Error — <коли>.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: <bc>.<snake(Sentinel)>
+            message: <Resource> not found
