@@ -30,7 +30,9 @@ grep -E 'Tests +[0-9]+ passed' /tmp/trip-ledger-gate.log || true
 if [ -n "$tdd" ]; then
   staged_tests=$(git diff --cached --name-only -- ':(glob)src/**/*.test.ts' ':(glob)src/**/testing/**')
   if [ -n "$staged_tests" ]; then echo "✗ $tdd($scope): у staged є тести — після RED контракт read-only:"; echo "$staged_tests"; exit 1; fi
-  if ! git log --format=%s -n 50 | grep -q "^test($scope)"; then echo "✗ $tdd($scope): в історії немає test($scope) — спершу RED"; exit 1; fi
+  # Без пайпа в grep -q: з pipefail ранній вихід grep дає git log SIGPIPE (141) → хибний «немає RED».
+  subjects=$'\n'$(git log --format=%s -n 50)
+  if [[ "$subjects" != *$'\n'"test($scope)"* ]]; then echo "✗ $tdd($scope): в історії немає test($scope) — спершу RED"; exit 1; fi
   echo "✓ TDD $tdd($scope): зелено, тести не зачеплено, RED-контракт у історії"; exit 0
 fi
 
