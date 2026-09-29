@@ -16,6 +16,33 @@ describe('CreateTrip', () => {
     expect(await repo.findById(trip.id)).toEqual(trip);
   });
 
+  it('AC-t2-3: stores baseCurrency given at creation, without budget', async () => {
+    const repo = new InMemoryTripRepository();
+    const trip = await new CreateTrip(repo).execute({
+      title: 'Test Trip',
+      country: 'PT',
+      startsAt: new Date('2026-10-01'),
+      endsAt: new Date('2026-10-15'),
+      baseCurrency: 'EUR',
+    });
+
+    const saved = await repo.findById(trip.id);
+    expect(saved?.baseCurrency).toBe('EUR');
+    expect(saved?.budget).toBeUndefined();
+  });
+
+  it('регрес: without baseCurrency the trip has none', async () => {
+    const repo = new InMemoryTripRepository();
+    const trip = await new CreateTrip(repo).execute({
+      title: 'Test Trip',
+      country: 'PT',
+      startsAt: new Date('2026-10-01'),
+      endsAt: new Date('2026-10-15'),
+    });
+
+    expect((await repo.findById(trip.id))?.baseCurrency).toBeUndefined();
+  });
+
   it('rejects end date before start date (domain invariant)', async () => {
     const repo = new InMemoryTripRepository();
     await expect(
