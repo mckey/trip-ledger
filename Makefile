@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate gate install-hooks
+.PHONY: dev build test lint migrate gate install-hooks verify-light
 
 dev:
 	npx ts-node-dev --respawn src/presentation/server.ts
@@ -21,3 +21,7 @@ gate:
 
 install-hooks:
 	git config core.hooksPath scripts/hooks
+
+# Полегшена перевірка косметики (урок 7.6): типи + рядок старту проти курованого еталона.
+verify-light:
+	./node_modules/.bin/tsc --noEmit && node --no-warnings scripts/check-banner.mjs
