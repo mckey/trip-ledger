@@ -18,7 +18,7 @@ prd_refs: [AC-03, AC-03b, AC-04, AC-06, AC-09]
 sad_refs: ["Critical flow 2"]
 data_refs: ["none: читає наявні колонки через репозиторій; нових полів не пише"]
 openapi_ops: [getTripSummary]
-adr_refs: [0002, 0003]
+adr_refs: ["0002", "0003"]
 files: [src/expenses/application/BudgetBlock.ts, src/expenses/application/BudgetBlock.test.ts, src/expenses/application/GetTripSummary.ts, src/expenses/application/GetTripSummary.test.ts]
 created: 2026-09-29
 ---

@@ -18,7 +18,7 @@ prd_refs: [AC-02, AC-03b]
 sad_refs: ["Critical flow 2"]
 data_refs: [data-model.md#check]
 openapi_ops: [setExpenseRate, getTripSummary]
-adr_refs: [0002]
+adr_refs: ["0002"]
 files: [src/shared/Rate.ts, src/shared/Rate.test.ts]
 created: 2026-09-29
 ---

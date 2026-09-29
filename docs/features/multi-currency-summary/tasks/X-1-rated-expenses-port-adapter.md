@@ -18,7 +18,7 @@ prd_refs: [AC-07]
 sad_refs: ["Critical flow 3"]
 data_refs: [data-model.md#expenses-aggregate-root--bc-expenses]
 openapi_ops: [setTripBaseCurrency]
-adr_refs: [0004]
+adr_refs: ["0004"]
 files: [src/trips/infrastructure/ExpenseRepositoryRatedPort.ts, src/trips/infrastructure/ExpenseRepositoryRatedPort.test.ts]
 created: 2026-09-29
 ---

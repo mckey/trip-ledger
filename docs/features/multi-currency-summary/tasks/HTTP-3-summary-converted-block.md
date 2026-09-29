@@ -18,7 +18,7 @@ prd_refs: [AC-03, AC-03b, AC-04, AC-09]
 sad_refs: ["Critical flow 2"]
 data_refs: ["none: HTTP-шар"]
 openapi_ops: [getTripSummary]
-adr_refs: [0003]
+adr_refs: ["0003"]
 files: [src/expenses/presentation/expensesRouter.ts, src/expenses/presentation/expenses.http.test.ts]
 created: 2026-09-29
 ---

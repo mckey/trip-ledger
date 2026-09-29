@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-05]
 sad_refs: ["Critical flow 1", "Critical flow 3"]
 data_refs: [data-model.md#promotion-order, data-model.md#check, migrations/20260928140000000_add_rate_snapshot_to_expenses.sql]
 openapi_ops: ["none: схема БД — на дріт не виходить; поля курсу на дроті — HTTP-1"]
-adr_refs: [0001, 0002]
+adr_refs: ["0001", "0002"]
 files: [migrations/, docs/features/multi-currency-summary/migrations/20260928140000000_add_rate_snapshot_to_expenses.sql, docs/features/multi-currency-summary/check-probes.sql]
 created: 2026-09-29
 ---

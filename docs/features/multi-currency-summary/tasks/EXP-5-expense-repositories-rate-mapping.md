@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-05, AC-07]
 sad_refs: ["Critical flow 1", "Critical flow 3"]
 data_refs: [data-model.md#expenses-aggregate-root--bc-expenses, data-model.md#indexes]
 openapi_ops: [addExpense, setExpenseRate]
-adr_refs: [0001, 0002]
+adr_refs: ["0001", "0002"]
 files: [src/expenses/domain/Expense.ts, src/expenses/infrastructure/PostgresExpenseRepository.ts, src/expenses/infrastructure/InMemoryExpenseRepository.ts, src/expenses/infrastructure/expenseRow.ts, src/expenses/infrastructure/expenseRow.test.ts]
 created: 2026-09-29
 ---

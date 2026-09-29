@@ -18,7 +18,7 @@ prd_refs: [AC-06, AC-07]
 sad_refs: ["Critical flow 3"]
 data_refs: [data-model.md#trips-aggregate-root--bc-trips]
 openapi_ops: [setTripBaseCurrency]
-adr_refs: [0004]
+adr_refs: ["0004"]
 files: [src/trips/domain/Trip.ts, src/trips/domain/errors.ts, src/trips/domain/Trip.test.ts]
 created: 2026-09-29
 ---

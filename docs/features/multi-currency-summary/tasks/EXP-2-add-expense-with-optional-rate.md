@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-06]
 sad_refs: ["Critical flow 1"]
 data_refs: [data-model.md#expenses-aggregate-root--bc-expenses]
 openapi_ops: [addExpense]
-adr_refs: [0001, 0004]
+adr_refs: ["0001", "0004"]
 files: [src/expenses/application/AddExpense.ts, src/expenses/application/AddExpense.test.ts]
 created: 2026-09-29
 ---

@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-05]
 sad_refs: ["Critical flow 1", "Critical flow 3"]
 data_refs: [data-model.md#domain--columns, data-model.md#test-fixtures]
 openapi_ops: [addExpense, setExpenseRate]
-adr_refs: [0001, 0004]
+adr_refs: ["0001", "0004"]
 files: [src/expenses/domain/Expense.ts, src/expenses/domain/errors.ts, src/expenses/domain/Expense.test.ts, src/expenses/testing/anExpense.ts, src/expenses/infrastructure/InMemoryExpenseRepository.ts, src/expenses/infrastructure/PostgresExpenseRepository.ts, src/expenses/infrastructure/TripRepositoryBudgetPort.ts, src/expenses/application/AddExpense.ts, src/expenses/application/GetTripSummary.ts]
 created: 2026-09-29
 ---

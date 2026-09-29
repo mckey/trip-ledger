@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-02]         # лише ID з PRD §5
 sad_refs: ["Critical flow 1"]    # дослівна мітка flow з sad.md §6; без ком усередині
 data_refs: [data-model.md#expenses-aggregate-root--bc-expenses]   # або ["none: <чому>"]
 openapi_ops: [addExpense]        # operationId з contracts/openapi.yaml; або ["none: <чому>"]
-adr_refs: [0001, 0003]
+adr_refs: ["0001", "0003"]
 files: [src/expenses/application/AddExpense.ts, src/expenses/application/AddExpense.test.ts]
 created: YYYY-MM-DD
 ---

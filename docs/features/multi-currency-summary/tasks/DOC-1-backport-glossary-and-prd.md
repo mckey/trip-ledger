@@ -18,7 +18,7 @@ prd_refs: [AC-06, AC-07, AC-09]
 sad_refs: ["Critical flow 2", "Critical flow 3"]
 data_refs: ["none: лише документи; схема — MIG-1"]
 openapi_ops: ["none: контракт не змінюється"]
-adr_refs: [0003, 0004]
+adr_refs: ["0003", "0004"]
 files: [CONTEXT.md, docs/features/trip-budget/CONTEXT.md, docs/features/trip-budget/sad.md, docs/features/trip-budget/adr/0001-budget-as-columns-on-trips.md, docs/features/multi-currency-summary/PRD.md, ARCHITECTURE.md]
 created: 2026-09-29
 ---

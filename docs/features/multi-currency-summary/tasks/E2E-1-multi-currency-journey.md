@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-04, AC-05, AC-07, AC-08, AC-09]
 sad_refs: ["Critical flow 1", "Critical flow 2", "Critical flow 3"]
 data_refs: ["none: in-memory репозиторії; Postgres-шлях — смок EXP-5"]
 openapi_ops: [createTrip, setTripBaseCurrency, addExpense, setExpenseRate, getTripSummary]
-adr_refs: [0003, 0004]
+adr_refs: ["0003", "0004"]
 files: [src/presentation/multiCurrency.e2e.test.ts]
 created: 2026-09-29
 ---

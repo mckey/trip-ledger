@@ -18,7 +18,7 @@ prd_refs: [AC-01, AC-02, AC-05, AC-08]
 sad_refs: ["Critical flow 1", "Critical flow 3"]
 data_refs: ["none: HTTP-шар; схема — MIG-1, мапінг — EXP-5"]
 openapi_ops: [addExpense, setExpenseRate]
-adr_refs: [0001, 0002]
+adr_refs: ["0001", "0002"]
 files: [src/expenses/presentation/expensesRouter.ts, src/expenses/presentation/expensePresenter.ts, src/expenses/presentation/expenses.http.test.ts]
 created: 2026-09-29
 ---

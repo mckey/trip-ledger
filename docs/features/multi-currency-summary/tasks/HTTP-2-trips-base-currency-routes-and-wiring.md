@@ -18,7 +18,7 @@ prd_refs: [AC-06, AC-07]
 sad_refs: ["Critical flow 3"]
 data_refs: ["none: HTTP-шар і зшивання; колонка base_currency — з trip-budget"]
 openapi_ops: [createTrip, setTripBaseCurrency]
-adr_refs: [0004]
+adr_refs: ["0004"]
 files: [src/trips/presentation/tripsRouter.ts, src/trips/presentation/tripPresenter.ts, src/trips/presentation/trips.http.test.ts, src/presentation/app.ts]
 created: 2026-09-29
 ---
