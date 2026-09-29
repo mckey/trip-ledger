@@ -4,8 +4,8 @@ export class Money {
     public readonly amount: number, // у мінорних одиницях (копійки/центи)
     public readonly currency: string, // ISO 4217, напр. 'UAH'
   ) {
-    if (!Number.isInteger(amount) || amount < 0) {
-      throw new Error('Money amount must be a non-negative integer of minor units');
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new Error('Money amount must be a non-negative safe integer of minor units');
     }
   }
 

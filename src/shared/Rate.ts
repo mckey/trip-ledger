@@ -2,7 +2,12 @@
 import { Money } from './Money';
 
 const SCALE = 1_000_000_000n;
-const PATTERN = /^(0|[1-9][0-9]*)(\.[0-9]{1,9})?$/;
+// Ціла частина: сам «0» (напр. «0.5») або 1–9 цифр без провідних нулів — дзеркалить
+// схему `Rate` контракту: (0|[1-9][0-9]{0,8}).
+const PATTERN = /^(0|[1-9][0-9]{0,8})(\.[0-9]{1,9})?$/;
+// 10¹⁸ — верхня межа nano при цілій частині рівно 9 цифр (999999999.999999999 < 10¹⁸).
+// Тримається тут (не лише в parse), щоб fromNano не міг обійти межу контракту.
+const MAX_NANO = 1_000_000_000_000_000_000n;
 
 export class InvalidRateError extends Error {
   constructor(message: string) {
@@ -15,8 +20,8 @@ export class Rate {
   private readonly nano: bigint;
 
   constructor(nano: bigint) {
-    if (nano <= 0n) {
-      throw new InvalidRateError('Rate must be a positive value');
+    if (nano <= 0n || nano >= MAX_NANO) {
+      throw new InvalidRateError('Rate must be a positive value with at most 9 integer digits');
     }
     this.nano = nano;
   }
@@ -50,6 +55,8 @@ export class Rate {
   apply(money: Money, target: string): Money {
     const product = BigInt(money.amount) * this.nano + SCALE / 2n;
     const resultAmount = product / SCALE;
-    return new Money(+resultAmount.toString(), target);
+    // Number(...) конвертує суму в мінорних одиницях, не курс (курс лишається BigInt до цього
+    // рядка) — safe-integer межу перевіряє конструктор Money.
+    return new Money(Number(resultAmount), target);
   }
 }
