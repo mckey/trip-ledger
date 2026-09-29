@@ -22,7 +22,6 @@
 | `POST /trips/{tripId}/expenses` | CHANGED — `rate?` у запиті, `rate` в `expense`; envelope — з trip-budget | AC-01, AC-02, AC-06; sad.md §5 «Контракти», §6 flow 1; trip-budget ADR-0003 |
 | `PUT /expenses/{expenseId}/rate` | NEW | US-04, US-06; AC-05, AC-08; sad.md §6 flow 3 (перша частина); ADR-0001 |
 | `GET /trips/{tripId}/summary` | CHANGED — блок `converted`; об'єкт `{lines, budget}` — з trip-budget | AC-03, AC-03b, AC-04, AC-09; sad.md §5 «Контракти», §6 flow 2; ADR-0003; trip-budget ADR-0002 |
-
 | `GET /trips`, `GET /trips/{tripId}`, `GET /trips/{tripId}/expenses` | неявно CHANGED, additive — `Trip.baseCurrency`, `Expense.rate` з'являться через серіалізацію класів; **у контракті не описані** | sad.md §5 (`Trip.ts ~`, `Expense.ts ~`); рішення F7 |
 
 Async-учасників у §6 немає → `events.md` не створено.
@@ -202,7 +201,6 @@ Async-учасників у §6 немає → `events.md` не створено
 | F4 | Серіалізація класів не дає форму контракту: `Trip` після trip-budget віддасть `budget`, якого схема не описує; `baseCurrency?` / `rate?` зі значенням `undefined` зникнуть із JSON замість `null`; `Rate` на `BigInt` — `JSON.stringify` кидає виняток. Типізовані моки цього не ловлять — це рантайм | Presenter-и `Trip` і `Expense` у presentation (`undefined → null`, `Rate → toString()` з 9 знаками) на стадії tasks, разом із trip-budget F6; HTTP-тест на форму відповіді проти моків з `src/contracts/` |
 | F5 | Дати на дроті — ISO date-time з `Date`, у БД `DATE`; на вході контракт каже `format: date`, а zod `coerce.date()` приймає і date-time | Описано as-built; на вході `format: date` лишається анотацією (zod не звужуємо — інакше тихий breaking change). Нормалізація дат в обидва боки до `YYYY-MM-DD` — окреме рішення |
 | F6 | HTTP-тести ходять з id `trip-1` (не UUID) і валютою як завгодно, а контракт каже `format: uuid` і `^[A-Z]{3}$` | `format: uuid` — анотація, валідувати формат id на вході не треба (неіснуючий id → 404, не 422); тести перевести на `^[A-Z]{3}$` разом зі звуженням валюти (trip-budget) |
-
 | F7 | `GET /trips`, `GET /trips/{id}`, `GET /trips/{id}/expenses` змінюються неявно (нові поля класів), але в контракті не описані | Не описувати в цьому контракті: фіча їх не чіпає, зміна additive, форма `Trip` / `Expense` уже тут. Presenter-и з F4 застосувати і до них; описати, коли їх зачепить фіча |
 | F8 | Зміна base currency поїздки з заданим budget: `budget_minor` + `base_currency` лежать на `trips` (trip-budget ADR-0001), тож 50 000 EUR мовчки стане 50 000 CZK. Лок AC-07 дивиться лише на явні курси; ADR-0004 цю взаємодію не згадує | Контракт описує поведінку SAD як є (зміна дозволена) і попереджає в `description` операції. Рекомендація — Amendment до ADR-0004: лок також поки задано budget (той самий `409 trips.base_currency_locked`, без нового коду) |
 | F9 | Сусідній api-forge-звіт trip-budget посилається на baseline, якого вже немає (rules замінено цим прогоном) | Рядок у run log trip-budget додано; саме розходження закриває F1 |

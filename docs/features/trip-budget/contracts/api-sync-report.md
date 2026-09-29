@@ -13,8 +13,8 @@
 | Run | Mode | Scope | Outcome |
 |---|---|---|---|
 | 1 (baseline) | initial | 3 ендпойнти: 1 NEW, 2 CHANGED | PASS, 6 flags |
-| — | rules | 2026-09-29: `.claude/rules/openapi.md` замінено baseline-ом `contract-forge` (прогін на multi-currency-summary). Цей контракт зроблено до заміни: «Conventions» в `openapi.yaml` і «Deviations from defaults» нижче міряні проти baseline api-forge, якого вже немає — див. multi-currency-summary F1/F9 | — |
 | 2 (drift) | `--update` | у `data-model.md` з'явилась `trips.budget_set_at TIMESTAMPTZ NULL`; до оновлення check 4 ✗ — колонку не віддає жоден ендпойнт | `TripBudget.budget_set_at` додано (additive для читача, breaking для моків — див. «Codegen drift»); PASS, +1 flag (F7) |
+| — | rules | 2026-09-29: `.claude/rules/openapi.md` замінено baseline-ом `contract-forge` (прогін на multi-currency-summary). Цей контракт зроблено до заміни: «Conventions» в `openapi.yaml` і «Deviations from defaults» нижче міряні проти baseline api-forge, якого вже немає — див. multi-currency-summary F1/F9 | — |
 
 ## Scope
 
