@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ExpenseRepository, TripStatusPort } from '../domain/Expense';
+import { ExpenseRepository, TripBudgetPort, TripStatusPort } from '../domain/Expense';
 import { AddExpense } from '../application/AddExpense';
 import { ListExpenses } from '../application/ListExpenses';
 import { GetTripSummary } from '../application/GetTripSummary';
@@ -14,11 +14,18 @@ const addExpenseSchema = z.object({
   spentAt: z.coerce.date(),
 });
 
-export function expensesRouter(expenses: ExpenseRepository, tripStatus: TripStatusPort): Router {
+// tripBudget — новий параметр (T6, ADR-0002/0003). AddExpense/GetTripSummary тепер
+// повертають envelope { expense|lines, budget }, але маршрути й форма HTTP-відповіді
+// тут навмисно НЕ змінюються — presentation переходить на envelope в T11.
+export function expensesRouter(
+  expenses: ExpenseRepository,
+  tripStatus: TripStatusPort,
+  tripBudget: TripBudgetPort,
+): Router {
   const router = Router();
-  const addExpense = new AddExpense(expenses, tripStatus);
+  const addExpense = new AddExpense(expenses, tripStatus, tripBudget);
   const listExpenses = new ListExpenses(expenses);
-  const getTripSummary = new GetTripSummary(expenses);
+  const getTripSummary = new GetTripSummary(expenses, tripBudget);
 
   router.post('/trips/:id/expenses', async (req, res) => {
     const parsed = addExpenseSchema.safeParse(req.body);
@@ -27,13 +34,13 @@ export function expensesRouter(expenses: ExpenseRepository, tripStatus: TripStat
     }
 
     try {
-      const expense = await addExpense.execute({
+      const result = await addExpense.execute({
         tripId: req.params.id,
         amount: new Money(parsed.data.amount, parsed.data.currency),
         category: parsed.data.category,
         spentAt: parsed.data.spentAt,
       });
-      return res.status(201).json(expense);
+      return res.status(201).json(result.expense);
     } catch (err) {
       if (err instanceof TripNotFoundError) {
         return res.status(404).json({ error: err.message });
@@ -50,7 +57,8 @@ export function expensesRouter(expenses: ExpenseRepository, tripStatus: TripStat
   });
 
   router.get('/trips/:id/summary', async (req, res) => {
-    return res.json(await getTripSummary.execute(req.params.id));
+    const result = await getTripSummary.execute(req.params.id);
+    return res.json(result.lines);
   });
 
   return router;

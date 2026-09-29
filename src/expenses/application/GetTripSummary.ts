@@ -1,5 +1,6 @@
-import { ExpenseCategory, ExpenseRepository } from '../domain/Expense';
+import { ExpenseCategory, ExpenseRepository, TripBudgetPort } from '../domain/Expense';
 import { Money } from '../../shared/Money';
+import { BudgetBlock, BudgetBlockResult } from './BudgetBlock';
 
 export interface TripSummaryLine {
   category: ExpenseCategory;
@@ -7,10 +8,18 @@ export interface TripSummaryLine {
   total: Money;
 }
 
-export class GetTripSummary {
-  constructor(private readonly expenses: ExpenseRepository) {}
+export interface TripSummaryResult {
+  lines: TripSummaryLine[];
+  budget: BudgetBlockResult | null;
+}
 
-  async execute(tripId: string): Promise<TripSummaryLine[]> {
+export class GetTripSummary {
+  constructor(
+    private readonly expenses: ExpenseRepository,
+    private readonly tripBudget: TripBudgetPort,
+  ) {}
+
+  async execute(tripId: string): Promise<TripSummaryResult> {
     const expenses = await this.expenses.findByTrip(tripId);
 
     const totals = new Map<string, Money>();
@@ -20,9 +29,16 @@ export class GetTripSummary {
       totals.set(key, running ? running.add(expense.amount) : expense.amount);
     }
 
-    return [...totals.entries()].map(([key, total]) => {
+    const lines = [...totals.entries()].map(([key, total]) => {
       const [category, currency] = key.split(':') as [ExpenseCategory, string];
       return { category, currency, total };
     });
+
+    const budget = await this.tripBudget.budget(tripId);
+
+    return {
+      lines,
+      budget: BudgetBlock(budget?.amount ?? null, expenses),
+    };
   }
 }
