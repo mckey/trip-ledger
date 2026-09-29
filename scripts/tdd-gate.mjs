@@ -6,7 +6,7 @@
 //   node scripts/tdd-gate.mjs red       <STORY>            test(<STORY>) + tsc зелений + vitest червоний лише у тестах цього коміту
 //   node scripts/tdd-gate.mjs green     <STORY>            feat(<STORY>) + tsc/vitest зелені + тести не змінені після RED
 //   node scripts/tdd-gate.mjs refactor  <STORY>            refactor(<STORY>) або no-op + ті самі перевірки
-//   node scripts/tdd-gate.mjs stats     <STORY> <BASE>     рядки тестів / реалізації від BASE до HEAD
+//   node scripts/tdd-gate.mjs stats     <STORY> [BASE]     рядки тестів / реалізації від BASE (типово — батько test(<STORY>)) до HEAD
 //
 // Тестовий контракт = src/**/*.test.ts і src/**/testing/** (тести колоковані з кодом).
 import { spawnSync } from 'node:child_process';
@@ -137,9 +137,12 @@ switch (phase) {
     pass(`${noop ? 'REFACTOR no-op (коміту немає), ' : ''}${v.passed} зелених; тести не змінені з ${red.slice(0, 7)}`);
   }
   case 'stats': {
-    if (!base) fail('stats потребує BASE');
-    const tests = numstat(base, TEST_PATHSPEC);
-    const impl = numstat(base, [':(glob)src/**/*.ts', ...TEST_PATHSPEC.map((p) => p.replace(':(glob)', ':(exclude,glob)'))]);
+    // Не baseline pre-flight: при resume після --review-tests він уже дорівнює RED і ховає тести.
+    const red = redSha(story);
+    const from = base ?? (red ? `${red}~1` : null);
+    if (!from) fail(`немає test(${story}) в історії і BASE не передано`);
+    const tests = numstat(from, TEST_PATHSPEC);
+    const impl = numstat(from, [':(glob)src/**/*.ts', ...TEST_PATHSPEC.map((p) => p.replace(':(glob)', ':(exclude,glob)'))]);
     console.log(`TESTS_ADDED: ${tests}`);
     console.log(`IMPL_ADDED: ${impl}`);
     console.log(`RATIO: ${impl ? (tests / impl).toFixed(2) : 'n/a'}`);

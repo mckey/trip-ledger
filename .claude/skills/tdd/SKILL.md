@@ -65,7 +65,7 @@ Agent(subagent_type="tdd-refactorer", description="REFACTOR <ID>",
 
 ## Завершення
 
-1. `node scripts/tdd-gate.mjs stats <ID> <BASELINE>` — рядки тестів і реалізації.
+1. `node scripts/tdd-gate.mjs stats <ID>` — рядки тестів і реалізації від батька RED-коміту (BASELINE не передавай: при resume він дорівнює RED).
 2. У tracker епіку (`docs/features/<epic>/tasks/tracker.md`) статус рядка `<ID>` → `done` (Edit, лише цю клітинку), `git commit -am "docs(tracker): <ID> done"`.
 3. Звіт користувачу:
 
