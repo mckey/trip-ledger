@@ -1,0 +1,4 @@
+ts	iter	cost_usd	total_usd	turns	duration_s	is_error	denials	note
+2026-09-29T14:07:42+03:00	0		0					start story=ralph/T1-balance model=sonnet max_iter=5 max_cost=5
+2026-09-29T14:09:13+03:00	1	0.5492348	0.5492	22	90	0	1	rc=0
+2026-09-29T14:09:23+03:00	1		0.5492					done after 1 iter
