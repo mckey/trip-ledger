@@ -1,0 +1,6 @@
+Starting background service…
+backgrounded · 49bfef2c · SHR-1 Rate (7.5 bg) (idle — send a prompt to start)
+  claude agents             list sessions
+  claude attach 49bfef2c    open in this terminal
+  claude logs 49bfef2c      show recent output
+  claude stop 49bfef2c      stop this session

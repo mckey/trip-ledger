@@ -1,0 +1,5 @@
+backgrounded · f4715773 · SHR-1 Rate (7.5 bg)
+  claude agents             list sessions
+  claude attach f4715773    open in this terminal
+  claude logs f4715773      show recent output
+  claude stop f4715773      stop this session

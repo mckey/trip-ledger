@@ -1,0 +1,27 @@
+{
+  "before": {
+    "total": 16,
+    "byState": {
+      "interactive/idle": 15,
+      "interactive/busy": 1
+    },
+    "background": []
+  },
+  "after": {
+    "total": 17,
+    "byState": {
+      "interactive/idle": 15,
+      "interactive/busy": 1,
+      "background/idle/done": 1
+    },
+    "background": [
+      {
+        "id": "f4715773",
+        "name": "SHR-1 Rate (7.5 bg)",
+        "status": "idle",
+        "state": "done",
+        "cwd": "C:\\goodwin\\trip-ledger-shr1"
+      }
+    ]
+  }
+}
