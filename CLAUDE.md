@@ -51,4 +51,5 @@ infrastructure -> domain (реалізує інтерфейси domain)
 - RED-коміт може містити заглушки публічного API (сигнатури, класи помилок, інтерфейси портів) з тілом `throw new Error('not implemented')` — щоб tsc був зелений, а тести падали на поведінці, а не на імпорті.
 - Хук `scripts/hooks/commit-msg` сам перевіряє: `test(<ID>)` — vitest мусить бути червоним; `feat|refactor(<ID>)` — зелений, тестів у staged немає, `test(<ID>)` вже в історії.
 - Після RED тести не змінюються. Якщо тест здається неправильним — зупинись і скажи, не правь його.
-- Гейти між фазами: `node scripts/tdd-gate.mjs <red|green|refactor> <ID>`.
+- Гейти між фазами: `node scripts/tdd-gate.mjs <red|green|refactor> <ID>` — exit code і є вердикт.
+- Headless-прогони йдуть у `dontAsk` з allowlist: одна Bash-команда на виклик, без ланцюжків `;` / `&&` / `| tail` і без `echo $?`; файли створюй і змінюй лише через Write/Edit, не heredoc. Відхилена команда — не привід зупинятись: розбий її на прості.
