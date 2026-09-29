@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Pre-commit trip-ledger (урок 7.6). Два детерміновані шари:
+#   1. Гейт для БУДЬ-ЯКОГО коміту: tsc --noEmit && vitest run.
+#   2. Якщо staged зачіпає критичний шлях (scripts/critical-paths.txt) — потрібен вердикт
+#      clean-reviewer ACCEPT або WARN саме для цього diff-а: review/verdicts/<hash>.txt.
+#      Змінив хоч байт після рев'ю → хеш інший → коміт заблоковано до нового прогону.
+# Встановлення: make install-hooks  (core.hooksPath = scripts/hooks)
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+echo "▶ gate: tsc --noEmit && vitest run"
+if ! ./node_modules/.bin/tsc --noEmit; then echo "✗ tsc червоний — коміт заблоковано"; exit 1; fi
+if ! npx vitest run --reporter=dot >/tmp/trip-ledger-gate.log 2>&1; then
+  tail -n 30 /tmp/trip-ledger-gate.log; echo "✗ vitest червоний — коміт заблоковано"; exit 1
+fi
+grep -E 'Tests +[0-9]+ passed' /tmp/trip-ledger-gate.log || true
+
+hash=$(scripts/critical-diff-hash.sh --cached)
+if [ -z "$hash" ]; then
+  echo "✓ критичні шляхи не зачеплено — рецензент не потрібен"; exit 0
+fi
+
+verdict_file="review/verdicts/$hash.txt"
+if [ ! -f "$verdict_file" ]; then
+  echo "✗ критичний шлях зачеплено, вердикту для diff $hash немає."
+  echo "  Прожени /review-clean <story> і збережи вердикт у $verdict_file"
+  exit 1
+fi
+verdict=$(grep -oE '^Вердикт: (ACCEPT|WARN|PARTIAL|REJECT)' "$verdict_file" | head -1 | cut -d' ' -f2)
+case "$verdict" in
+  ACCEPT|WARN) echo "✓ clean-reviewer: $verdict для diff $hash"; exit 0 ;;
+  *) echo "✗ clean-reviewer: ${verdict:-немає вердикту} для diff $hash — коміт заблоковано"; exit 1 ;;
+esac

@@ -1,0 +1,12 @@
+# Критичний шлях trip-ledger: гроші, збереження стану, цілісність даних (урок 7.6).
+# Зміна хоч одного з цих шляхів = повний набір: гейт + видимий канал + clean-reviewer.
+# Формат: git pathspec, по одному на рядок.
+src/shared/Money.ts
+src/shared/Rate.ts
+src/shared/Balance.ts
+src/expenses/application/
+src/trips/application/SetTripBudget.ts
+src/trips/domain/Trip.ts
+src/expenses/infrastructure/
+src/trips/infrastructure/
+migrations/
