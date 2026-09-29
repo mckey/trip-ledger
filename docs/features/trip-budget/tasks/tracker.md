@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | T0 | [Узгодити контракт trip-budget з живим дротом: прогін contract-forge --update (F1/F2)](./T0-reconcile-contract-with-as-built-wire.md) | docs | Vladimir Makarov | M | — | todo |
 | T1 | [Додати знаковий value object Balance у src/shared](./T1-balance-value-object.md) | domain | Vladimir Makarov | S | — | review |
-| T2 | [Додати budget, base currency і setBudget() у доменну сутність Trip](./T2-trip-budget-domain.md) | domain | Vladimir Makarov | M | — | todo |
+| T2 | [Додати budget, base currency і setBudget() у доменну сутність Trip](./T2-trip-budget-domain.md) | domain | Vladimir Makarov | M | — | review |
 | T3 | [Промотувати міграцію budget на trips і змапити колонки в PostgresTripRepository](./T3-budget-migration-trip-repository.md) | migration | Vladimir Makarov | M | T2 | todo |
 | T4 | [Додати use case SetTripBudget у BC trips](./T4-set-trip-budget-use-case.md) | app | Vladimir Makarov | S | T2 | todo |
 | T5 | [Додати TripBudgetPort, чисту функцію BudgetBlock і адаптер TripRepositoryBudgetPort у BC expenses](./T5-budget-block-and-port.md) | app | Vladimir Makarov | M | T1, T2 | todo |

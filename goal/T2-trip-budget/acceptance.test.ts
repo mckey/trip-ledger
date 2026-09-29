@@ -1,5 +1,5 @@
 // Приймальний зонд T2 для /goal: DoD story, переписаний у тести до старту цілі.
-// Агент цей файл не змінює — умова цілі вимагає порожнього `git diff lesson-7.3-goal -- goal/`.
+// Агент цей файл не змінює — умова цілі вимагає порожнього `git diff 4e75763 -- goal/` (SHA, не назва гілки: гілка їде вперед з кожним комітом агента).
 import { describe, expect, it } from 'vitest';
 import { Money } from '../../src/shared/Money';
 import { Trip } from '../../src/trips/domain/Trip';
