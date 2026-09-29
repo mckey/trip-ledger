@@ -64,6 +64,8 @@ export interface paths {
          *     витрата з ЯВНИМ rate snapshot (`RatedExpensesPort`); похідний курс 1 лок не
          *     тримає (AC-07, ADR-0003/0004). Після зміни витрати у старій валюті стають
          *     «без курсу» і видні в лічильнику. Статус поїздки не перевіряється.
+         *     Увага (flag F8): budget поїздки зберігається в її base currency без
+         *     перерахунку — зміна валюти при заданому budget змінює і його валюту.
          */
         put: operations["setTripBaseCurrency"];
         post?: never;

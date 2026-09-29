@@ -102,6 +102,8 @@ paths:
         витрата з ЯВНИМ rate snapshot (`RatedExpensesPort`); похідний курс 1 лок не
         тримає (AC-07, ADR-0003/0004). Після зміни витрати у старій валюті стають
         «без курсу» і видні в лічильнику. Статус поїздки не перевіряється.
+        Увага (flag F8): budget поїздки зберігається в її base currency без
+        перерахунку — зміна валюти при заданому budget змінює і його валюту.
       operationId: setTripBaseCurrency
       requestBody:
         required: true
@@ -312,7 +314,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Owner-ключ з `API_KEY` (trip-budget sad.md §8). Перевіряється до будь-якого читання сховища; 401 однаковий для наявного й неіснуючого ресурсу.
+      description: Owner-ключ з `API_KEY` (trip-budget sad.md §8; ім'я заголовка — дефолт `.claude/rules/openapi.md`). Перевіряється до будь-якого читання сховища; 401 однаковий для наявного й неіснуючого ресурсу.
 
   parameters:
     TripId:
