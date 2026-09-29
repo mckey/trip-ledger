@@ -1,4 +1,5 @@
 import { RatedExpensesPort, Trip, TripRepository } from '../domain/Trip';
+import { TripDoesNotExistError } from '../domain/errors';
 
 export class SetTripBaseCurrency {
   constructor(
@@ -6,7 +7,18 @@ export class SetTripBaseCurrency {
     private readonly ratedExpenses: RatedExpensesPort,
   ) {}
 
-  async execute(_tripId: string, _currency: string): Promise<Trip> {
-    throw new Error('not implemented');
+  async execute(tripId: string, currency: string): Promise<Trip> {
+    const trip = await this.tripRepository.findById(tripId);
+    if (!trip) {
+      throw new TripDoesNotExistError(tripId);
+    }
+    if (trip.baseCurrency === currency) {
+      return trip;
+    }
+    const hasRated =
+      trip.baseCurrency !== undefined && (await this.ratedExpenses.hasRatedExpenses(tripId));
+    trip.setBaseCurrency(currency, hasRated);
+    await this.tripRepository.save(trip);
+    return trip;
   }
 }
