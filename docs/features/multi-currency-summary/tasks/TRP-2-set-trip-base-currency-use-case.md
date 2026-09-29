@@ -11,7 +11,7 @@ estimate: S
 blocks: [HTTP-2]
 blocked_by: [TRP-1]
 external_blocked_by: []
-status: todo
+status: done
 owner: "Vladimir Makarov"
 context_budget: ~2200 tokens
 prd_refs: [AC-06, AC-07]

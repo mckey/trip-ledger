@@ -11,7 +11,7 @@ estimate: M
 blocks: [TRP-2, X-1]
 blocked_by: []
 external_blocked_by: ["trip-budget:T2"]
-status: todo
+status: done
 owner: "Vladimir Makarov"
 context_budget: ~2400 tokens
 prd_refs: [AC-06, AC-07]
